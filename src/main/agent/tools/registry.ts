@@ -1,17 +1,22 @@
 import type { AgentTool } from './types'
 import { readFileTool } from './read-file'
 import { createFileTool } from './create-file'
+import { editFileTool } from './edit-file'
 import { terminalTool } from './terminal'
 import { canvasTool } from './canvas'
 import { askUserTool } from './ask-user'
+import { webSearchTool } from './web-search'
 
 export const allTools: AgentTool[] = [
   readFileTool,
   createFileTool,
+  editFileTool,
   terminalTool,
   canvasTool,
-  askUserTool
+  askUserTool,
+  webSearchTool
 ]
+
 
 export class ToolRegistry {
   static getToolsForMode(mode: 'chat' | 'project'): AgentTool[] {

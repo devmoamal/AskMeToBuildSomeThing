@@ -1,4 +1,4 @@
-import { eq, desc, asc } from 'drizzle-orm'
+import { eq, desc, asc, inArray } from 'drizzle-orm'
 import { getDb } from './client'
 import {
   providersTable,
@@ -367,6 +367,7 @@ export const dbQueries = {
       role: r.role as any,
       content: r.content,
       toolCalls: r.toolCalls ? JSON.parse(r.toolCalls) : undefined,
+      parts: r.parts ? JSON.parse(r.parts) : undefined,
       createdAt: r.createdAt
     }))
   },
@@ -378,7 +379,8 @@ export const dbQueries = {
       await db.update(messagesTable)
         .set({
           content: msg.content,
-          toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null
+          toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+          parts: msg.parts ? JSON.stringify(msg.parts) : null
         })
         .where(eq(messagesTable.id, msg.id))
     } else {
@@ -389,9 +391,64 @@ export const dbQueries = {
         role: msg.role,
         content: msg.content,
         toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+        parts: msg.parts ? JSON.stringify(msg.parts) : null,
         createdAt: msg.createdAt || Date.now()
       })
     }
+  },
+
+  async deleteMessage(id: string): Promise<void> {
+    const db = getDb()
+    await db.delete(messagesTable).where(eq(messagesTable.id, id))
+  },
+
+  async rollbackToMessage({
+    targetId,
+    messageId,
+    isProjectSession = false,
+    deleteTargetMessage = false
+  }: {
+    targetId: string
+    messageId: string
+    isProjectSession?: boolean
+    deleteTargetMessage?: boolean
+  }): Promise<{ deletedMessageIds: string[]; remainingMessages: Message[] }> {
+    const db = getDb()
+
+    // 1. Fetch all messages in the thread ordered chronologically
+    const allMessages = await dbQueries.getMessages(targetId, isProjectSession)
+    const targetIndex = allMessages.findIndex(m => m.id === messageId)
+
+    if (targetIndex === -1) {
+      throw new Error(`Target message ${messageId} not found in thread ${targetId}`)
+    }
+
+    const targetMessage = allMessages[targetIndex]
+    const messagesToDelete = deleteTargetMessage
+      ? allMessages.slice(targetIndex)
+      : allMessages.slice(targetIndex + 1)
+
+    const deletedMessageIds = messagesToDelete.map(m => m.id)
+
+    if (deletedMessageIds.length > 0) {
+      // Delete messages
+      await db.delete(messagesTable).where(inArray(messagesTable.id, deletedMessageIds))
+
+      // Delete canvases created after or linked to deleted messages
+      const allCanvases = await dbQueries.getCanvases(targetId, isProjectSession)
+      const targetTime = targetMessage.createdAt
+      const canvasesToDelete = allCanvases.filter(c =>
+        (deleteTargetMessage ? c.createdAt >= targetTime : c.createdAt > targetTime) ||
+        (c.messageId && deletedMessageIds.includes(c.messageId))
+      )
+
+      if (canvasesToDelete.length > 0) {
+        await db.delete(canvasesTable).where(inArray(canvasesTable.id, canvasesToDelete.map(c => c.id)))
+      }
+    }
+
+    const remaining = await dbQueries.getMessages(targetId, isProjectSession)
+    return { deletedMessageIds, remainingMessages: remaining }
   },
 
   // --- Canvases ---

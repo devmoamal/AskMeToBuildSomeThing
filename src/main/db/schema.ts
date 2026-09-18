@@ -56,6 +56,7 @@ export const messagesTable = sqliteTable('messages', {
   role: text('role').notNull(), // 'user' | 'assistant' | 'system'
   content: text('content').notNull(),
   toolCalls: text('tool_calls'), // JSON array of ToolCallRecord
+  parts: text('parts'), // JSON array of MessagePart
   createdAt: integer('created_at').notNull()
 })
 

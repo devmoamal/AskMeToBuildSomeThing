@@ -38,12 +38,25 @@ export type ToolCallStatus = 'pending' | 'requires_approval' | 'executing' | 'co
 
 export type ToolCallRecord = {
   id: string
-  toolName: 'read_file' | 'create_file' | 'use_terminal' | 'make_canvas' | 'ask_user'
+  toolName: 'read_file' | 'create_file' | 'edit_file' | 'use_terminal' | 'make_canvas' | 'ask_user' | 'web_search'
   args: any
   status: ToolCallStatus
   result?: any
   error?: string
 }
+
+export type WebSearchResult = {
+  title: string
+  url: string
+  snippet: string
+}
+
+export type WebSearchOutput = {
+  query: string
+  results: WebSearchResult[]
+  totalResults: number
+}
+
 
 export type ToolResultRecord = {
   toolCallId: string
@@ -52,6 +65,11 @@ export type ToolResultRecord = {
   error?: string
 }
 
+export type MessagePart =
+  | { type: 'thinking'; text: string; isGenerating?: boolean }
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; toolCall: ToolCallRecord }
+
 export type Message = {
   id: string
   chatId?: string
@@ -59,6 +77,7 @@ export type Message = {
   role: 'user' | 'assistant' | 'system'
   content: string
   toolCalls?: ToolCallRecord[]
+  parts?: MessagePart[]
   createdAt: number
 }
 

@@ -8,7 +8,8 @@ import type {
   ProjectSession,
   Message,
   CanvasDocument,
-  AgentStreamEvent
+  AgentStreamEvent,
+  MessagePart
 } from '../../shared/types'
 import type { QuestionnairePayload } from '../../shared/schemas'
 
@@ -34,12 +35,18 @@ export function useAppStore() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasDocument | null>(null)
   const [draftChatGroupId, setDraftChatGroupId] = useState<string | null>(null)
+  const [promptDraft, setPromptDraft] = useState<string | null>(null)
 
   const [isGenerating, setIsGenerating] = useState(false)
   const [selectedModels, setSelectedModels] = useState<Record<string, { providerId: string; model: string }>>({})
   const [activeQuestionnaire, setActiveQuestionnaire] = useState<{
     toolCallId: string
     payload: QuestionnairePayload
+  } | null>(null)
+  const [activeApproval, setActiveApproval] = useState<{
+    toolCallId: string
+    toolName: string
+    args: any
   } | null>(null)
 
   const isInitializedRef = useRef(false)
@@ -142,9 +149,24 @@ export function useAppStore() {
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant') {
+            const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
+            if (existingParts.length === 0 || existingParts[existingParts.length - 1].type !== 'text') {
+              existingParts.push({ type: 'text', text: event.text })
+            } else {
+              const lastIdx = existingParts.length - 1
+              const prevTextPart = existingParts[lastIdx] as { type: 'text'; text: string }
+              existingParts[lastIdx] = {
+                type: 'text',
+                text: prevTextPart.text + event.text
+              }
+            }
             return [
               ...prev.slice(0, -1),
-              { ...last, content: last.content + event.text }
+              {
+                ...last,
+                content: last.content + event.text,
+                parts: existingParts
+              }
             ]
           } else {
             return [
@@ -153,21 +175,45 @@ export function useAppStore() {
                 id: `streaming_${Date.now()}`,
                 role: 'assistant',
                 content: event.text,
+                parts: [{ type: 'text', text: event.text }],
                 createdAt: Date.now()
               }
             ]
           }
         })
       } else if (event.type === 'tool_call_start') {
+        if (event.call.status === 'requires_approval') {
+          setActiveApproval({
+            toolCallId: event.call.id,
+            toolName: event.call.toolName,
+            args: event.call.args
+          })
+        }
         setMessages(prev => {
           const last = prev[prev.length - 1]
-          const existingTools = last?.toolCalls || []
+          const existingTools = last?.toolCalls ? [...last.toolCalls] : []
           const updatedTools = existingTools.some(t => t.id === event.call.id)
             ? existingTools.map(t => t.id === event.call.id ? event.call : t)
             : [...existingTools, event.call]
 
           if (last && last.role === 'assistant') {
-            return [...prev.slice(0, -1), { ...last, toolCalls: updatedTools }]
+            const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
+            const existingPartIdx = existingParts.findIndex(
+              p => p.type === 'tool_call' && p.toolCall.id === event.call.id
+            )
+            if (existingPartIdx !== -1) {
+              existingParts[existingPartIdx] = { type: 'tool_call', toolCall: event.call }
+            } else {
+              existingParts.push({ type: 'tool_call', toolCall: event.call })
+            }
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                toolCalls: updatedTools,
+                parts: existingParts
+              }
+            ]
           } else {
             return [
               ...prev,
@@ -176,6 +222,7 @@ export function useAppStore() {
                 role: 'assistant',
                 content: '',
                 toolCalls: [event.call],
+                parts: [{ type: 'tool_call', toolCall: event.call }],
                 createdAt: Date.now()
               }
             ]
@@ -184,38 +231,63 @@ export function useAppStore() {
       } else if (event.type === 'tool_call_stream') {
         setMessages(prev => {
           const last = prev[prev.length - 1]
-          if (!last || !last.toolCalls) return prev
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...last,
-              toolCalls: last.toolCalls.map(tc => {
-                if (tc.id === event.id) {
-                  return {
-                    ...tc,
-                    result: {
-                      ...(tc.result || {}),
-                      stdout: ((tc.result?.stdout || '') + event.chunk)
-                    }
+          if (!last) return prev
+          const updatedTools = last.toolCalls?.map(tc => {
+            if (tc.id === event.id) {
+              return {
+                ...tc,
+                result: {
+                  ...(tc.result || {}),
+                  stdout: ((tc.result?.stdout || '') + event.chunk)
+                }
+              }
+            }
+            return tc
+          })
+          const updatedParts = last.parts?.map(p => {
+            if (p.type === 'tool_call' && p.toolCall.id === event.id) {
+              return {
+                ...p,
+                toolCall: {
+                  ...p.toolCall,
+                  result: {
+                    ...(p.toolCall.result || {}),
+                    stdout: ((p.toolCall.result?.stdout || '') + event.chunk)
                   }
                 }
-                return tc
-              })
+              }
             }
+            return p
+          })
+          return [
+            ...prev.slice(0, -1),
+            { ...last, toolCalls: updatedTools, parts: updatedParts }
           ]
         })
       } else if (event.type === 'tool_call_done') {
+        setActiveApproval(prev => prev?.toolCallId === event.id ? null : prev)
         setMessages(prev => {
           const last = prev[prev.length - 1]
-          if (!last || !last.toolCalls) return prev
+          if (!last) return prev
+          const updatedTools = last.toolCalls?.map(tc =>
+            tc.id === event.id ? { ...tc, status: event.status, result: event.result } : tc
+          )
+          const updatedParts = last.parts?.map(p => {
+            if (p.type === 'tool_call' && p.toolCall.id === event.id) {
+              return {
+                ...p,
+                toolCall: {
+                  ...p.toolCall,
+                  status: event.status,
+                  result: event.result
+                }
+              }
+            }
+            return p
+          })
           return [
             ...prev.slice(0, -1),
-            {
-              ...last,
-              toolCalls: last.toolCalls.map(tc =>
-                tc.id === event.id ? { ...tc, status: event.status, result: event.result } : tc
-              )
-            }
+            { ...last, toolCalls: updatedTools, parts: updatedParts }
           ]
         })
       } else if (event.type === 'pause_for_user') {
@@ -228,26 +300,68 @@ export function useAppStore() {
           const filtered = prev.filter(c => c.id !== event.canvas.id)
           return [event.canvas, ...filtered]
         })
+        setActiveCanvas(event.canvas)
       } else if (event.type === 'title_generated') {
         setChats(prev => prev.map(c => c.id === event.targetId ? { ...c, title: event.title } : c))
         setProjectSessions(prev => prev.map(s => s.id === event.targetId ? { ...s, title: event.title } : s))
       } else if (event.type === 'done') {
         setIsGenerating(false)
         setActiveQuestionnaire(null)
-        // Refresh messages from db to ensure consistency
+        setActiveApproval(null)
+        // Refresh messages and canvases from db to ensure consistency
         const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
         if (targetId) {
           if (activeTab === 'chats') {
             window.api.chats.getMessages(targetId).then(setMessages)
-            window.api.chats.getCanvases(targetId).then(setCanvases)
+            window.api.chats.getCanvases(targetId).then((newCanvases) => {
+              setCanvases(newCanvases)
+              setActiveCanvas(curr => {
+                if (!curr) return null
+                const updated = newCanvases.find(c => c.id === curr.id)
+                return updated || curr
+              })
+            })
           } else {
             window.api.projects.getMessages(targetId).then(setMessages)
-            window.api.projects.getCanvases(targetId).then(setCanvases)
+            window.api.projects.getCanvases(targetId).then((newCanvases) => {
+              setCanvases(newCanvases)
+              setActiveCanvas(curr => {
+                if (!curr) return null
+                const updated = newCanvases.find(c => c.id === curr.id)
+                return updated || curr
+              })
+            })
           }
         }
       } else if (event.type === 'error') {
         setIsGenerating(false)
-        alert(`Agent error: ${event.error}`)
+        setActiveQuestionnaire(null)
+        setActiveApproval(null)
+        setMessages(prev => {
+          const last = prev[prev.length - 1]
+          const errorMessageText = `⚠️ **Connection Error:** ${event.error}\n\nPlease check your internet connection or AI provider settings and try again.`
+          if (last && last.role === 'assistant' && !last.content) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                content: errorMessageText,
+                parts: [{ type: 'text', text: errorMessageText }]
+              }
+            ]
+          } else {
+            return [
+              ...prev,
+              {
+                id: `error_${Date.now()}`,
+                role: 'assistant',
+                content: errorMessageText,
+                parts: [{ type: 'text', text: errorMessageText }],
+                createdAt: Date.now()
+              }
+            ]
+          }
+        })
       }
     })
 
@@ -342,6 +456,27 @@ export function useAppStore() {
 
     if (!targetId) return
 
+    // Quick trigger: typing exactly /canvas creates starter canvas workspace immediately
+    if (text.trim() === '/canvas' && (!attachments || attachments.length === 0)) {
+      const starterContent = `# Canvas\n\n.ابدأ اكتب هنا أي فكرة، ملاحظات، خطة، مشروع، كود، أو محتوى تريد نشتغل عليه.\n\n### Ideas\n- \n\n### Notes\n- \n\n### Tasks\n- [ ] \n\n### Code / Technical\n\`\`\`\n\n\`\`\`\n\n### References\n- \n`
+      const canvasId = `canvas_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      const doc: CanvasDocument = {
+        id: canvasId,
+        chatId: activeTab === 'chats' ? targetId : undefined,
+        projectSessionId: activeTab === 'projects' ? targetId : undefined,
+        title: 'New Canvas',
+        language: 'markdown',
+        content: starterContent,
+        version: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      const saved = await window.api.canvases.save(doc)
+      setCanvases(prev => [saved, ...prev.filter(c => c.id !== saved.id)])
+      setActiveCanvas(saved)
+      return
+    }
+
     let finalProvider = providers.find(p => p.id === currentThreadModel?.providerId)
     let finalModel = currentThreadModel?.model
 
@@ -407,6 +542,7 @@ export function useAppStore() {
   }
 
   const approveTool = async (toolCallId: string, approved: boolean) => {
+    setActiveApproval(null)
     await window.api.agent.approveTool({ toolCallId, approved })
   }
 
@@ -415,6 +551,104 @@ export function useAppStore() {
     if (targetId) {
       await window.api.agent.abort(targetId)
       setIsGenerating(false)
+    }
+  }
+
+  const createCanvasDocument = async (title = 'New Canvas', initialContent?: string, language = 'markdown') => {
+    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
+    if (!targetId) return null
+    const starterContent = initialContent ?? `# Canvas\n\n.ابدأ اكتب هنا أي فكرة، ملاحظات، خطة، مشروع، كود، أو محتوى تريد نشتغل عليه.\n\n### Ideas\n- \n\n### Notes\n- \n\n### Tasks\n- [ ] \n\n### Code / Technical\n\`\`\`\n\n\`\`\`\n\n### References\n- \n`
+    const canvasId = `canvas_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    const doc: CanvasDocument = {
+      id: canvasId,
+      chatId: activeTab === 'chats' ? targetId : undefined,
+      projectSessionId: activeTab === 'projects' ? targetId : undefined,
+      title,
+      language,
+      content: starterContent,
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    const saved = await window.api.canvases.save(doc)
+    setCanvases(prev => [saved, ...prev.filter(c => c.id !== saved.id)])
+    setActiveCanvas(saved)
+    return saved
+  }
+
+  const applyCanvasAiAction = async (action: string, canvas: CanvasDocument) => {
+    let promptText = ''
+    switch (action) {
+      case 'fix_bugs':
+        promptText = `Please review the code in canvas "${canvas.title}" and fix any bugs, syntax errors, or runtime issues. Use make_canvas to update the canvas.`
+        break
+      case 'add_comments':
+        promptText = `Please add clear, helpful inline comments and docstrings to the code in canvas "${canvas.title}". Use make_canvas to update the canvas.`
+        break
+      case 'add_logs':
+        promptText = `Please add debugging logs/print statements to track execution in canvas "${canvas.title}". Use make_canvas to update the canvas.`
+        break
+      case 'code_review':
+        promptText = `Please perform a thorough code review of canvas "${canvas.title}" and optimize/clean up the implementation. Use make_canvas to update the canvas.`
+        break
+      case 'refactor':
+        promptText = `Please refactor the code in canvas "${canvas.title}" for better structure, readability, and modularity. Use make_canvas to update the canvas.`
+        break
+      case 'polish':
+        promptText = `Please polish the writing in canvas "${canvas.title}" for grammar, flow, and high-impact clarity. Use make_canvas to update the canvas.`
+        break
+      case 'suggest_edits':
+        promptText = `Please review and provide editorial improvements for canvas "${canvas.title}". Use make_canvas to update the canvas.`
+        break
+      case 'shorten':
+        promptText = `Please make canvas "${canvas.title}" more concise and punchy without losing crucial details. Use make_canvas to update the canvas.`
+        break
+      case 'elaborate':
+        promptText = `Please expand on canvas "${canvas.title}" with more comprehensive explanations, examples, and depth. Use make_canvas to update the canvas.`
+        break
+      case 'add_emojis':
+        promptText = `Please enhance canvas "${canvas.title}" with clean visual structure, section emojis, and highlights. Use make_canvas to update the canvas.`
+        break
+      default:
+        promptText = `Please improve canvas "${canvas.title}" based on: ${action}. Use make_canvas to update the canvas.`
+    }
+    await sendPrompt(promptText)
+  }
+
+  const rollbackToMessage = async (message: Message) => {
+    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
+    if (!targetId || !window.api) return
+
+    // Abort active streaming if running
+    if (isGenerating) {
+      await window.api.agent.abort(targetId)
+      setIsGenerating(false)
+    }
+    setActiveQuestionnaire(null)
+    setActiveApproval(null)
+
+    try {
+      // Delete this message and all subsequent messages from history
+      const result = activeTab === 'chats'
+        ? await window.api.chats.rollback({ chatId: targetId, messageId: message.id, deleteTargetMessage: true })
+        : await window.api.projects.rollback({ sessionId: targetId, messageId: message.id, deleteTargetMessage: true })
+
+      setMessages(result.remainingMessages)
+
+      // Refresh canvases
+      const updatedCanvases = activeTab === 'chats'
+        ? await window.api.chats.getCanvases(targetId)
+        : await window.api.projects.getCanvases(targetId)
+      setCanvases(updatedCanvases)
+      setActiveCanvas(curr => {
+        if (!curr) return null
+        return updatedCanvases.find(c => c.id === curr.id) || null
+      })
+
+      // Take the message content directly to the input box
+      setPromptDraft(message.content)
+    } catch (err) {
+      console.error('Failed to rollback message:', err)
     }
   }
 
@@ -445,6 +679,7 @@ export function useAppStore() {
     setActiveCanvasModal,
     isGenerating,
     activeQuestionnaire,
+    activeApproval,
     createNewChat,
     createChatGroup,
     toggleGroupCollapse,
@@ -456,8 +691,13 @@ export function useAppStore() {
     submitQuestionnaireAnswers,
     approveTool,
     abortGeneration,
+    createCanvasDocument,
+    applyCanvasAiAction,
     currentThreadModel,
     setSelectedModel,
+    promptDraft,
+    setPromptDraft,
+    rollbackToMessage,
     refreshState: loadState
   }
 }

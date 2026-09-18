@@ -1,29 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { FileCode, Copy, Check } from 'lucide-react'
+import React, { useState } from 'react'
+import { Copy, Check, ArrowUpRight, FileText } from 'lucide-react'
 import type { ToolCallRecord, CanvasDocument } from '../../../../shared/types'
+import { VercelBadge } from '../../ui/VercelIcon'
 
 interface CanvasCardProps {
   toolCall: ToolCallRecord
   onOpenCanvas?: (canvas: CanvasDocument) => void
 }
 
-export const CanvasCard: React.FC<CanvasCardProps> = ({ toolCall }) => {
+/**
+ * Vercel Artifact / Deployment Canvas Card
+ * Strict Geist aesthetic: #000000 card, #222 hairline border, pure white action button
+ */
+export const CanvasCard: React.FC<CanvasCardProps> = ({ toolCall, onOpenCanvas }) => {
   const [copied, setCopied] = useState(false)
   const args = toolCall.args || {}
-  const title = args.title || 'Canvas Document'
-  const language = args.language || 'text'
-  const initialContent = args.content || toolCall.result?.content || ''
-
-  const [content, setContent] = useState<string>(initialContent)
+  const title = args.title || toolCall.result?.title || 'Canvas Document'
+  const language = args.language || toolCall.result?.language || 'markdown'
+  const content = toolCall.result?.content || args.content || ''
   const canvasId = toolCall.result?.canvasId || toolCall.id
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const version = toolCall.result?.version || 1
 
-  // Synchronize when toolCall args/result update from agent stream
-  useEffect(() => {
-    if (initialContent && !content) {
-      setContent(initialContent)
-    }
-  }, [initialContent])
+  const lines = content ? content.split('\n') : []
+  const preview = lines.slice(0, 2).join('\n').trim()
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -32,79 +31,67 @@ export const CanvasCard: React.FC<CanvasCardProps> = ({ toolCall }) => {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleContentChange = (newVal: string) => {
-    setContent(newVal)
-
-    // Debounced silent auto-save to database — no save button needed
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
+  const handleOpen = () => {
+    if (onOpenCanvas) {
+      onOpenCanvas({
+        id: canvasId,
+        title,
+        language,
+        content,
+        version,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      })
     }
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        if (window.api?.canvases?.save) {
-          await window.api.canvases.save({
-            id: canvasId,
-            title,
-            language,
-            content: newVal
-          })
-        }
-      } catch {
-        // Silent catch for auto-save
-      }
-    }, 500)
   }
 
-  // Count lines for status bar
-  const lineCount = content ? content.split('\n').length : 1
-
   return (
-    <div className="my-3 rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden shadow-xs">
-      {/* Top Header */}
-      <div className="flex items-center justify-between px-3.5 py-2 bg-zinc-900/70 border-b border-zinc-800/80 text-xs text-zinc-300 select-none">
+    <div
+      onClick={handleOpen}
+      className="my-2 rounded-lg border border-[#222] bg-[#000000] hover:border-[#444] transition-all cursor-pointer overflow-hidden shadow-xs group select-none font-sans text-xs"
+    >
+      <div className="px-3.5 py-2 bg-[#0a0a0a] border-b border-[#222] flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 truncate min-w-0">
-          <FileCode className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-          <span className="font-medium text-xs text-zinc-200 truncate">{title}</span>
-          <span className="px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 font-mono text-[10px] uppercase shrink-0">
-            {language}
+          <div className="flex items-center justify-center w-5 h-5 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+            <FileText className="w-3 h-3" />
+          </div>
+          <span className="font-medium text-white truncate group-hover:text-zinc-200 transition-colors">
+            {title}
           </span>
-          <span className="text-[11px] text-zinc-500 font-mono hidden sm:inline shrink-0">
-            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+          <VercelBadge variant="default" className="uppercase">
+            {language}
+          </VercelBadge>
+          <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
+            {lines.length} {lines.length === 1 ? 'line' : 'lines'}
           </span>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ml-2">
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2.5 py-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs transition-colors cursor-pointer"
-            title="Copy canvas content"
+            className="p-1 text-zinc-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-[#1a1a1a]"
+            title="Copy content"
           >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy</span>
-              </>
-            )}
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="flex items-center gap-1 text-[11px] font-semibold bg-white hover:bg-zinc-200 text-black px-2.5 py-1 rounded-md transition-all shadow-xs cursor-pointer"
+          >
+            <span>Open Canvas</span>
+            <ArrowUpRight className="w-3 h-3" />
           </button>
         </div>
       </div>
 
-      {/* In-Place Editable Canvas Area (No popup, no save button required) */}
-      <div className="relative bg-zinc-950">
-        <textarea
-          value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
-          placeholder="Canvas content..."
-          spellCheck={false}
-          className="w-full min-h-[160px] max-h-[480px] p-3.5 bg-transparent font-mono text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none resize-y leading-relaxed border-0"
-        />
-      </div>
+      {preview && (
+        <div className="px-4 py-2 font-mono text-[11px] text-zinc-400 bg-[#050505] truncate leading-relaxed">
+          {preview}
+        </div>
+      )}
     </div>
   )
 }

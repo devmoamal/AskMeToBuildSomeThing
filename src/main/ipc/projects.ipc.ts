@@ -73,4 +73,13 @@ export function registerProjectsIpc() {
   ipcMain.handle('projects:getCanvases', async (_, sessionId: string) => {
     return dbQueries.getCanvases(sessionId, true)
   })
+
+  ipcMain.handle('projects:rollback', async (_, payload: { sessionId: string; messageId: string; deleteTargetMessage?: boolean }) => {
+    return dbQueries.rollbackToMessage({
+      targetId: payload.sessionId,
+      messageId: payload.messageId,
+      isProjectSession: true,
+      deleteTargetMessage: payload.deleteTargetMessage
+    })
+  })
 }

@@ -33,4 +33,13 @@ export function registerChatsIpc() {
   ipcMain.handle('chats:getCanvases', async (_, chatId: string) => {
     return dbQueries.getCanvases(chatId, false)
   })
+
+  ipcMain.handle('chats:rollback', async (_, payload: { chatId: string; messageId: string; deleteTargetMessage?: boolean }) => {
+    return dbQueries.rollbackToMessage({
+      targetId: payload.chatId,
+      messageId: payload.messageId,
+      isProjectSession: false,
+      deleteTargetMessage: payload.deleteTargetMessage
+    })
+  })
 }

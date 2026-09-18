@@ -68,6 +68,14 @@ export const CreateFileArgsSchema = z.object({
 })
 export type CreateFileArgs = z.infer<typeof CreateFileArgsSchema>
 
+export const EditFileArgsSchema = z.object({
+  path: z.string().min(1, 'Path is required'),
+  content: z.string().optional(),
+  old_str: z.string().optional(),
+  new_str: z.string().optional()
+})
+export type EditFileArgs = z.infer<typeof EditFileArgsSchema>
+
 export const TerminalArgsSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional()
@@ -82,7 +90,18 @@ export const MakeCanvasArgsSchema = z.object({
 export type MakeCanvasArgs = z.infer<typeof MakeCanvasArgsSchema>
 
 export const AskUserArgsSchema = z.object({
-  title: z.string(),
-  questions: z.array(QuestionnaireQuestionSchema)
+  question: z.string().optional(),
+  type: z.enum(['single_choice', 'multiple_choice', 'text']).default('single_choice'),
+  options: z.array(QuestionnaireOptionSchema).optional(),
+  placeholder: z.string().optional(),
+  title: z.string().optional(),
+  questions: z.array(QuestionnaireQuestionSchema).optional()
 })
 export type AskUserArgs = z.infer<typeof AskUserArgsSchema>
+
+export const WebSearchArgsSchema = z.object({
+  query: z.string().min(1, 'Search query is required'),
+  numResults: z.number().int().min(1).max(10).default(5)
+})
+export type WebSearchArgs = z.infer<typeof WebSearchArgsSchema>
+

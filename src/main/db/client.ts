@@ -108,6 +108,7 @@ export function initializeDatabase(customPath?: string) {
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       tool_calls TEXT,
+      parts TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
       FOREIGN KEY (project_session_id) REFERENCES project_sessions(id) ON DELETE CASCADE
@@ -129,7 +130,7 @@ export function initializeDatabase(customPath?: string) {
     );
   `)
 
-  // Migration check: ensure messages table has correct snake_case columns
+  // Migration check: ensure messages table has correct snake_case columns & parts
   try {
     const tableInfo = rawDb.prepare("PRAGMA table_info('messages')").all() as Array<{ name: string }>
     const colNames = tableInfo.map(c => c.name)
@@ -138,6 +139,9 @@ export function initializeDatabase(customPath?: string) {
     }
     if (colNames.includes('projectSessionId') && !colNames.includes('project_session_id')) {
       rawDb.exec('ALTER TABLE messages RENAME COLUMN projectSessionId TO project_session_id;')
+    }
+    if (!colNames.includes('parts')) {
+      rawDb.exec('ALTER TABLE messages ADD COLUMN parts TEXT;')
     }
   } catch (err) {
     console.error('Migration error for messages table:', err)

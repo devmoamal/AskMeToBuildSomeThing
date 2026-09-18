@@ -159,4 +159,114 @@ describe('Provider Adapters', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  it('should preserve reasoning_content and strip think tags for DeepSeek models', async () => {
+    const adapter = new OpenAiCompatibleAdapter()
+    let capturedBody: any = null
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: any, options: any) => {
+      if (options?.body) {
+        capturedBody = JSON.parse(options.body)
+      }
+      return new Response('data: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' }
+      })
+    }) as any
+
+    try {
+      const generator = adapter.streamChat({
+        config: {
+          id: 'p_deepseek',
+          name: 'DeepSeek',
+          type: 'openai',
+          baseUrl: 'https://api.deepseek.com/v1',
+          apiKey: 'sk-test',
+          models: ['deepseek-reasoner'],
+          isDefault: true,
+          createdAt: Date.now()
+        },
+        model: 'deepseek-reasoner',
+        messages: [
+          { role: 'user', content: 'What is Python?' },
+          {
+            role: 'assistant',
+            content: '<think>Deep analysis of Python language</think>Python is an interpreted language.',
+            toolCalls: [
+              {
+                id: 'call_ask',
+                toolName: 'ask_user',
+                args: { question: 'Version?' },
+                status: 'completed',
+                result: 'v3.12'
+              }
+            ]
+          }
+        ]
+      })
+
+      for await (const _ of generator) {}
+
+      expect(capturedBody).toBeDefined()
+      const assistantMsg = capturedBody.messages.find((m: any) => m.role === 'assistant')
+      expect(assistantMsg).toBeDefined()
+      // reasoning_content must be extracted and preserved
+      expect(assistantMsg.reasoning_content).toBe('Deep analysis of Python language')
+      // content must be clean without <think> tags
+      expect(assistantMsg.content).toBe('Python is an interpreted language.')
+      expect(assistantMsg.tool_calls).toBeDefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('should NOT include reasoning_content for official OpenAI (api.openai.com) to avoid 400 schema errors', async () => {
+    const adapter = new OpenAiCompatibleAdapter()
+    let capturedBody: any = null
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: any, options: any) => {
+      if (options?.body) {
+        capturedBody = JSON.parse(options.body)
+      }
+      return new Response('data: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' }
+      })
+    }) as any
+
+    try {
+      const generator = adapter.streamChat({
+        config: {
+          id: 'p_openai',
+          name: 'OpenAI Official',
+          type: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'sk-test',
+          models: ['gpt-4o'],
+          isDefault: true,
+          createdAt: Date.now()
+        },
+        model: 'gpt-4o',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          {
+            role: 'assistant',
+            content: '<think>Some thought</think>Response',
+            reasoning_content: 'Some thought'
+          }
+        ]
+      })
+
+      for await (const _ of generator) {}
+
+      expect(capturedBody).toBeDefined()
+      const assistantMsg = capturedBody.messages.find((m: any) => m.role === 'assistant')
+      expect(assistantMsg).toBeDefined()
+      // reasoning_content MUST NOT be sent to api.openai.com
+      expect(assistantMsg.reasoning_content).toBeUndefined()
+      expect(assistantMsg.content).toBe('Response')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

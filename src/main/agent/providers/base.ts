@@ -6,6 +6,7 @@ export interface ProviderChatMessage {
   content: string
   toolCallId?: string
   toolCalls?: ToolCallRecord[]
+  reasoning_content?: string
 }
 
 export interface ProviderStreamParams {

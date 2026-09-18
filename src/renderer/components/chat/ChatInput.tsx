@@ -16,6 +16,7 @@ export interface AttachedFile {
 interface ChatInputProps {
   mode: 'chat' | 'project'
   isGenerating: boolean
+  isPromptActive?: boolean
   providers: ProviderConfig[]
   selectedProviderId?: string
   selectedModel?: string
@@ -23,20 +24,43 @@ interface ChatInputProps {
   onSend: (text: string, attachments?: AttachedFile[]) => void
   onAbort: () => void
   placeholder?: string
+  promptDraft?: string | null
+  onPromptDraftConsumed?: () => void
+  promptBar?: React.ReactNode
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   mode,
   isGenerating,
+  isPromptActive = false,
   providers,
   selectedProviderId,
   selectedModel,
   onSelectModel,
   onSend,
   onAbort,
-  placeholder = 'Ask anything... (type / for canvas or commands)'
+  placeholder = 'Ask anything... (type / for canvas or commands)',
+  promptDraft,
+  onPromptDraftConsumed,
+  promptBar
 }) => {
   const [text, setText] = useState('')
+
+  // Auto-fill prompt when rollback & edit is triggered
+  useEffect(() => {
+    if (promptDraft !== undefined && promptDraft !== null) {
+      setText(promptDraft)
+      if (onPromptDraftConsumed) {
+        onPromptDraftConsumed()
+      }
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(promptDraft.length, promptDraft.length)
+        }
+      }, 50)
+    }
+  }, [promptDraft, onPromptDraftConsumed])
   const [attachments, setAttachments] = useState<AttachedFile[]>([])
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false)
   const [showSlashDropdown, setShowSlashDropdown] = useState(false)
@@ -151,7 +175,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleSubmit = () => {
     const trimmed = text.trim()
-    if ((!trimmed && attachments.length === 0) || isGenerating) return
+    if ((!trimmed && attachments.length === 0) || isGenerating || isPromptActive) return
     onSend(trimmed, attachments.length > 0 ? attachments : undefined)
     setText('')
     setAttachments([])
@@ -164,8 +188,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const hasContent = text.trim().length > 0 || attachments.length > 0
 
   return (
-    <div className="relative px-4 pb-4 pt-1 bg-zinc-950">
+    <div className="relative px-4 pb-2.5 pt-1 bg-zinc-950">
       <div className="max-w-3xl mx-auto w-full relative">
+        {/* Floating prompt HUD attached to top/back of input box */}
+        {promptBar}
+
         {/* Slash command dropdown */}
         {showSlashDropdown && (
           <SlashCommandDropdown
@@ -176,14 +203,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         {/* Input container card */}
-        <div className="relative flex flex-col rounded-2xl border border-zinc-800/80 bg-zinc-900/60 focus-within:border-zinc-700/80 focus-within:bg-zinc-900/90 transition-all shadow-xs">
+        <div className="relative flex flex-col rounded-lg border border-[#222] bg-[#0a0a0a] focus-within:border-[#383838] transition-all shadow-xs">
           {/* Attached Chips */}
           {attachments.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5 pb-1">
+            <div className="flex flex-wrap items-center gap-1.5 px-2.5 pt-2 pb-1">
               {attachments.map((att) => (
                 <div
                   key={att.id}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60 max-w-[220px]"
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60 max-w-[220px]"
                 >
                   {att.isImage ? (
                     <Image className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
@@ -210,22 +237,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            className="w-full resize-none bg-transparent px-3.5 pt-3 pb-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none leading-relaxed min-h-[44px]"
+            disabled={isPromptActive}
+            placeholder={isPromptActive ? 'Respond to the prompt above to continue...' : placeholder}
+            className={cn(
+              'w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none leading-relaxed min-h-[38px]',
+              isPromptActive && 'opacity-50 cursor-not-allowed'
+            )}
           />
 
           {/* Footer Actions Toolbar */}
-          <div className="flex items-center justify-between px-2.5 py-1.5">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-between px-2 py-1">
+            <div className="flex items-center gap-2">
               {/* Plus Action Menu */}
               <div className="relative" ref={plusMenuRef}>
                 <button
                   type="button"
                   onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-                  className="flex items-center justify-center h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors cursor-pointer"
+                  className="flex items-center justify-center h-6 w-6 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 transition-colors cursor-pointer"
                   title="Add attachment or action"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Plus Menu Popover */}
@@ -295,25 +326,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <button
                 type="button"
                 onClick={onAbort}
-                className="flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium bg-red-950/60 text-red-300 border border-red-800/60 hover:bg-red-900/60 transition-colors cursor-pointer"
+                className="flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium bg-red-950/60 text-red-300 border border-red-800/60 hover:bg-red-900/60 transition-colors cursor-pointer"
               >
-                <Square className="w-3 h-3 fill-current" />
+                <Square className="w-2.5 h-2.5 fill-current" />
                 <span>Stop</span>
               </button>
             ) : (
               <button
                 type="button"
-                disabled={!hasContent}
+                disabled={!hasContent || isPromptActive}
                 onClick={handleSubmit}
                 className={cn(
-                  'flex items-center justify-center h-7 w-7 rounded-full transition-colors cursor-pointer',
-                  hasContent
-                    ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-xs'
-                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60'
+                  'flex items-center justify-center h-6 w-6 rounded-md transition-all cursor-pointer',
+                  hasContent && !isPromptActive
+                    ? 'bg-white text-black hover:bg-zinc-200 shadow-xs'
+                    : 'bg-[#1a1a1a] text-zinc-600 border border-[#222] cursor-not-allowed opacity-50'
                 )}
                 title="Send message"
               >
-                <ArrowUp className="w-3.5 h-3.5" />
+                <ArrowUp className="w-3 h-3" />
               </button>
             )}
           </div>

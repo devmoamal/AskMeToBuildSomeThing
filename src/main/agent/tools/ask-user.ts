@@ -1,63 +1,45 @@
-import { AskUserArgsSchema, type AskUserArgs, type QuestionnairePayload } from '../../../shared/schemas'
+import { AskUserArgsSchema, type AskUserArgs, type QuestionnairePayload, type QuestionnaireQuestion } from '../../../shared/schemas'
 import type { AgentTool, AgentToolContext } from './types'
 
 export const askUserTool: AgentTool<AskUserArgs> = {
   name: 'ask_user',
-  description: 'Interview the user by displaying an interactive multi-step questionnaire card in the chat. Use this whenever you need to clarify requirements, select architectural options, or confirm user preferences.',
+  description: 'Ask the user EXACTLY ONE question to clarify requirements, choose an architectural path, or get a decision. NEVER ask multiple questions at once. When the user answers, you will receive their response and can then ask the next question if needed.',
   parameters: AskUserArgsSchema,
   jsonSchema: {
     type: 'object',
     properties: {
-      title: {
+      question: {
         type: 'string',
-        description: 'Short headline or topic for the questionnaire (e.g. "Architecture & Design Choices")'
+        description: 'The EXACT ONE question to ask the user right now. Do not ask multiple questions.'
       },
-      questions: {
+      type: {
+        type: 'string',
+        enum: ['single_choice', 'multiple_choice', 'text'],
+        description: 'Format of question: single_choice (pick one or write custom), multiple_choice (pick multiple or write custom), or text (open text input)'
+      },
+      options: {
         type: 'array',
-        description: 'The list of questions to ask the user to clarify requirements or make decisions',
+        description: 'Selectable choices for single_choice or multiple_choice. The user can also write their own answer.',
         items: {
           type: 'object',
           properties: {
-            id: {
-              type: 'string',
-              description: 'Unique identifier for the question (e.g. "q1", "db_choice")'
-            },
-            question: {
-              type: 'string',
-              description: 'The question text to present to the user'
-            },
-            type: {
-              type: 'string',
-              enum: ['single_choice', 'multiple_choice', 'text'],
-              description: 'Format of question: single_choice (radio), multiple_choice (checkboxes), or text (input)'
-            },
-            placeholder: {
-              type: 'string',
-              description: 'Optional placeholder for text inputs'
-            },
-            required: {
-              type: 'boolean',
-              default: true
-            },
-            options: {
-              type: 'array',
-              description: 'List of selectable choices for single_choice or multiple_choice questions',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string', description: 'Option key' },
-                  label: { type: 'string', description: 'User-facing choice text' },
-                  description: { type: 'string', description: 'Brief subtitle explaining what this option entails' }
-                },
-                required: ['id', 'label']
-              }
-            }
+            id: { type: 'string', description: 'Option key (e.g. "opt_1")' },
+            label: { type: 'string', description: 'User-facing choice text' },
+            description: { type: 'string', description: 'Brief explanation of this choice' }
           },
-          required: ['id', 'question', 'type']
+          required: ['id', 'label']
         }
+      },
+      placeholder: {
+        type: 'string',
+        description: 'Optional placeholder for text inputs'
+      },
+      title: {
+        type: 'string',
+        description: 'Optional short topic title for this question'
       }
     },
-    required: ['title', 'questions']
+    required: ['question']
   },
   allowedModes: ['chat', 'project'],
   async execute(args: AskUserArgs, ctx: AgentToolContext, toolCallId: string) {
@@ -65,17 +47,41 @@ export const askUserTool: AgentTool<AskUserArgs> = {
       throw new Error('Questionnaire interaction not supported in current context')
     }
 
+    let singleQuestion: QuestionnaireQuestion
+
+    if (args.question) {
+      singleQuestion = {
+        id: 'q1',
+        question: args.question,
+        type: args.type || 'single_choice',
+        options: args.options || [],
+        placeholder: args.placeholder,
+        required: true
+      }
+    } else if (args.questions && args.questions.length > 0) {
+      // If legacy array was sent, enforce exactly ONE question at a time
+      singleQuestion = args.questions[0]
+    } else {
+      singleQuestion = {
+        id: 'q1',
+        question: 'Please clarify your requirement:',
+        type: 'text',
+        required: true
+      }
+    }
+
     const payload: QuestionnairePayload = {
       id: `quest_${Date.now()}`,
-      title: args.title,
-      questions: args.questions
+      title: args.title || 'Question',
+      questions: [singleQuestion]
     }
 
     const answers = await ctx.pauseForQuestionnaire(payload, toolCallId)
+    const answerVal = answers[singleQuestion.id] ?? Object.values(answers)[0] ?? ''
 
     return {
-      title: args.title,
-      answers,
+      question: singleQuestion.question,
+      answer: answerVal,
       submittedAt: Date.now(),
       success: true
     }

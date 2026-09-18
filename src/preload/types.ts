@@ -36,6 +36,7 @@ export interface ElectronAPI {
     deleteGroup: (id: string) => Promise<void>
     getMessages: (chatId: string) => Promise<Message[]>
     getCanvases: (chatId: string) => Promise<CanvasDocument[]>
+    rollback: (payload: { chatId: string; messageId: string; deleteTargetMessage?: boolean }) => Promise<{ deletedMessageIds: string[]; remainingMessages: Message[] }>
   }
   projects: {
     getAll: () => Promise<Project[]>
@@ -50,6 +51,7 @@ export interface ElectronAPI {
     deleteSession: (id: string) => Promise<void>
     getMessages: (sessionId: string) => Promise<Message[]>
     getCanvases: (sessionId: string) => Promise<CanvasDocument[]>
+    rollback: (payload: { sessionId: string; messageId: string; deleteTargetMessage?: boolean }) => Promise<{ deletedMessageIds: string[]; remainingMessages: Message[] }>
   }
   agent: {
     sendPrompt: (payload: SendPromptPayload) => Promise<void>

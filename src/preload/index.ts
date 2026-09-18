@@ -31,7 +31,8 @@ const api: ElectronAPI = {
     saveGroup: (group) => ipcRenderer.invoke('chats:saveGroup', group),
     deleteGroup: (id: string) => ipcRenderer.invoke('chats:deleteGroup', id),
     getMessages: (chatId: string) => ipcRenderer.invoke('chats:getMessages', chatId),
-    getCanvases: (chatId: string) => ipcRenderer.invoke('chats:getCanvases', chatId)
+    getCanvases: (chatId: string) => ipcRenderer.invoke('chats:getCanvases', chatId),
+    rollback: (payload) => ipcRenderer.invoke('chats:rollback', payload)
   },
   projects: {
     getAll: () => ipcRenderer.invoke('projects:getAll'),
@@ -45,7 +46,8 @@ const api: ElectronAPI = {
     saveSession: (session) => ipcRenderer.invoke('projects:saveSession', session),
     deleteSession: (id: string) => ipcRenderer.invoke('projects:deleteSession', id),
     getMessages: (sessionId: string) => ipcRenderer.invoke('projects:getMessages', sessionId),
-    getCanvases: (sessionId: string) => ipcRenderer.invoke('projects:getCanvases', sessionId)
+    getCanvases: (sessionId: string) => ipcRenderer.invoke('projects:getCanvases', sessionId),
+    rollback: (payload) => ipcRenderer.invoke('projects:rollback', payload)
   },
   agent: {
     sendPrompt: (payload: SendPromptPayload) => ipcRenderer.invoke('agent:sendPrompt', payload),

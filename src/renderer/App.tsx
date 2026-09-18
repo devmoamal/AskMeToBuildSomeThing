@@ -27,6 +27,20 @@ export const App: React.FC = () => {
     return localStorage.getItem('sidebar_open') !== 'false'
   })
 
+  // Auto-collapse sidebar when Canvas opens to maximize editing workspace (like ChatGPT Canvas)
+  const prevActiveCanvasRef = React.useRef(store.activeCanvas)
+  useEffect(() => {
+    if (!prevActiveCanvasRef.current && store.activeCanvas) {
+      setIsSidebarOpen(false)
+    } else if (prevActiveCanvasRef.current && !store.activeCanvas) {
+      const saved = localStorage.getItem('sidebar_open') !== 'false'
+      setIsSidebarOpen(saved)
+    }
+    prevActiveCanvasRef.current = store.activeCanvas
+  }, [store.activeCanvas])
+
+  const isSidebarEffectivelyOpen = isSidebarOpen && !store.activeCanvas
+
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => {
       const next = !prev
@@ -50,6 +64,7 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [store])
 
+  // Main application view with ChatGPT-style Dual-Pane Canvas workspace
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeProject = store.projects.find(p => p.id === store.activeProjectId)
   const activeSession = store.projectSessions.find(s => s.id === store.activeSessionId)
@@ -60,49 +75,55 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
-      {/* Sidebar with slide tabs */}
-      {isSidebarOpen && (
-        <AppSidebar
-          activeTab={store.activeTab}
-          setActiveTab={store.setActiveTab}
-          chats={store.chats}
-          chatGroups={store.chatGroups}
-          activeChatId={store.activeChatId}
-          onSelectChat={store.setActiveChatId}
-          onNewChat={store.createNewChat}
-          onNewGroup={store.createChatGroup}
-          onToggleGroupCollapse={store.toggleGroupCollapse}
-          onRenameChat={store.renameChat}
-          onDeleteGroup={async (id) => {
-            await window.api.chats.deleteGroup(id)
+      {/* Sidebar with slide tabs (auto-collapsed when Canvas is open to maximize workspace) */}
+      <AppSidebar
+        isOpen={isSidebarEffectivelyOpen}
+        activeTab={store.activeTab}
+        setActiveTab={store.setActiveTab}
+        chats={store.chats}
+        chatGroups={store.chatGroups}
+        activeChatId={store.activeChatId}
+        onSelectChat={store.setActiveChatId}
+        onNewChat={store.createNewChat}
+        onNewGroup={store.createChatGroup}
+        onToggleGroupCollapse={store.toggleGroupCollapse}
+        onRenameChat={store.renameChat}
+        onDeleteGroup={async (id) => {
+          await window.api.chats.deleteGroup(id)
+          store.refreshState()
+        }}
+        onDeleteChat={async (id) => {
+          await window.api.chats.delete(id)
+          store.refreshState()
+        }}
+        onMoveChatToGroup={async (chatId, groupId) => {
+          const c = store.chats.find(x => x.id === chatId)
+          if (c) {
+            await window.api.chats.save({ id: c.id, title: c.title, groupId })
             store.refreshState()
-          }}
-          onDeleteChat={async (id) => {
-            await window.api.chats.delete(id)
-            store.refreshState()
-          }}
-          projects={store.projects}
-          activeProjectId={store.activeProjectId}
-          projectSessions={store.projectSessions}
-          activeSessionId={store.activeSessionId}
-          onSelectProject={store.setActiveProjectId}
-          onSelectSession={store.setActiveSessionId}
-          onPickFolder={store.selectProjectFolder}
-          onNewSession={store.createProjectSession}
-          onRenameSession={store.renameSession}
-          onDeleteProject={async (id) => {
-            await window.api.projects.delete(id)
-            store.refreshState()
-          }}
-          onDeleteSession={async (id) => {
-            await window.api.projects.deleteSession(id)
-            store.refreshState()
-          }}
-          providers={store.providers}
-          onOpenSettings={() => store.setIsSettingsOpen(true)}
-          onCloseSidebar={toggleSidebar}
-        />
-      )}
+          }
+        }}
+        projects={store.projects}
+        activeProjectId={store.activeProjectId}
+        projectSessions={store.projectSessions}
+        activeSessionId={store.activeSessionId}
+        onSelectProject={store.setActiveProjectId}
+        onSelectSession={store.setActiveSessionId}
+        onPickFolder={store.selectProjectFolder}
+        onNewSession={store.createProjectSession}
+        onRenameSession={store.renameSession}
+        onDeleteProject={async (id) => {
+          await window.api.projects.delete(id)
+          store.refreshState()
+        }}
+        onDeleteSession={async (id) => {
+          await window.api.projects.deleteSession(id)
+          store.refreshState()
+        }}
+        providers={store.providers}
+        onOpenSettings={() => store.setIsSettingsOpen(true)}
+        onCloseSidebar={toggleSidebar}
+      />
 
       {/* Main Chat / Project Workspace */}
       <main className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
@@ -129,17 +150,23 @@ export const App: React.FC = () => {
             store.refreshState()
           }}
           onExpandCanvasModal={(canvas) => store.setActiveCanvasModal(canvas)}
+          onApplyAiAction={store.applyCanvasAiAction}
           providers={store.providers}
           selectedProviderId={store.currentThreadModel?.providerId}
           selectedModel={store.currentThreadModel?.model}
           onSelectModel={store.setSelectedModel}
           isGenerating={store.isGenerating}
+          activeQuestionnaire={store.activeQuestionnaire}
+          activeApproval={store.activeApproval}
           onSend={store.sendPrompt}
           onAbort={store.abortGeneration}
           onOpenCanvas={store.setActiveCanvas}
           onSubmitAnswers={store.submitQuestionnaireAnswers}
           onApproveTool={store.approveTool}
-          isSidebarOpen={isSidebarOpen}
+          onRollback={store.rollbackToMessage}
+          promptDraft={store.promptDraft}
+          onPromptDraftConsumed={() => store.setPromptDraft(null)}
+          isSidebarOpen={isSidebarEffectivelyOpen}
           onToggleSidebar={toggleSidebar}
         />
       </main>

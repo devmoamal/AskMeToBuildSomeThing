@@ -115,4 +115,77 @@ describe('Database Queries and Schema', () => {
     expect(v2.version).toBe(2)
     expect(v2.content).toContain('Event-driven')
   })
+
+  it('should rollback messages and subsequent canvases to a target message', async () => {
+    await dbQueries.saveChat({ id: 'chat_rb', title: 'Rollback Test' })
+
+    // Message 1 (user)
+    await dbQueries.saveMessage({
+      id: 'msg_1',
+      chatId: 'chat_rb',
+      role: 'user',
+      content: 'Initial prompt',
+      createdAt: 1000
+    })
+
+    // Message 2 (assistant)
+    await dbQueries.saveMessage({
+      id: 'msg_2',
+      chatId: 'chat_rb',
+      role: 'assistant',
+      content: 'Assistant reply 1',
+      createdAt: 2000
+    })
+
+    // Message 3 (user)
+    await dbQueries.saveMessage({
+      id: 'msg_3',
+      chatId: 'chat_rb',
+      role: 'user',
+      content: 'Second prompt',
+      createdAt: 3000
+    })
+
+    // Message 4 (assistant)
+    await dbQueries.saveMessage({
+      id: 'msg_4',
+      chatId: 'chat_rb',
+      role: 'assistant',
+      content: 'Assistant reply 2',
+      createdAt: 4000
+    })
+
+    // Canvas created during message 4
+    await dbQueries.saveCanvas({
+      id: 'canvas_rb_1',
+      chatId: 'chat_rb',
+      messageId: 'msg_4',
+      title: 'Generated Canvas',
+      content: 'Some canvas data'
+    })
+
+    // Test 1: Rollback to msg_3 without deleting target (rollback to here)
+    const rb1 = await dbQueries.rollbackToMessage({
+      targetId: 'chat_rb',
+      messageId: 'msg_3',
+      deleteTargetMessage: false
+    })
+
+    expect(rb1.deletedMessageIds).toEqual(['msg_4'])
+    expect(rb1.remainingMessages.map(m => m.id)).toEqual(['msg_1', 'msg_2', 'msg_3'])
+
+    // Canvas tied to msg_4 should be gone
+    const canvasesRemaining = await dbQueries.getCanvases('chat_rb')
+    expect(canvasesRemaining.length).toBe(0)
+
+    // Test 2: Rollback and delete target message (rollback & edit)
+    const rb2 = await dbQueries.rollbackToMessage({
+      targetId: 'chat_rb',
+      messageId: 'msg_3',
+      deleteTargetMessage: true
+    })
+
+    expect(rb2.deletedMessageIds).toEqual(['msg_3'])
+    expect(rb2.remainingMessages.map(m => m.id)).toEqual(['msg_1', 'msg_2'])
+  })
 })

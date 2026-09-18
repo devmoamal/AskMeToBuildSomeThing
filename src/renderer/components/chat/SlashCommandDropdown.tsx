@@ -1,5 +1,5 @@
 import React from 'react'
-import { FileCode, HelpCircle, ListTodo } from 'lucide-react'
+import { FileCode, HelpCircle, ListTodo, Globe } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 export interface SlashCommandItem {
@@ -15,6 +15,12 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
     label: '/canvas',
     description: 'Create an editable in-chat Typeset markdown canvas document',
     icon: FileCode
+  },
+  {
+    command: '/search',
+    label: '/search',
+    description: 'Search the live web with DuckDuckGo for documentation, facts, or news',
+    icon: Globe
   },
   {
     command: '/grill-me',

@@ -1,17 +1,18 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import {
   Folder,
+  FolderOpen,
   FolderPlus,
   Plus,
-  MoreVertical,
+  MoreHorizontal,
   Trash2,
-  ChevronDown,
-  ChevronRight,
   Search,
+  X,
   Pencil
 } from 'lucide-react'
 import type { Project, ProjectSession } from '../../../shared/types'
-import { cn, formatRelativeTime } from '../../lib/utils'
+import { cn } from '../../lib/utils'
+import { useClickOutside } from '../../hooks/useClickOutside'
 
 interface ProjectsTabProps {
   projects: Project[]
@@ -45,6 +46,15 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
   const [sessionMenuId, setSessionMenuId] = useState<string | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
+
+  const projectMenuRef = useRef<HTMLDivElement>(null)
+  const sessionMenuRef = useRef<HTMLDivElement>(null)
+
+  useClickOutside(projectMenuRef, () => setActiveMenuId(null), Boolean(activeMenuId))
+  useClickOutside(sessionMenuRef, () => setSessionMenuId(null), Boolean(sessionMenuId))
+
   const toggleProject = (projectId: string) => {
     setCollapsedProjects(prev => ({
       ...prev,
@@ -65,83 +75,142 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
     setEditingSessionId(null)
   }
 
+  const filteredProjects = projects.filter(p => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase()
+    return p.name.toLowerCase().includes(q) || sessions.some(s => s.projectId === p.id && s.title.toLowerCase().includes(q))
+  })
+
   return (
     <div className="flex flex-col h-full select-none">
-      {/* Clean Actions Bar with Open/Add Project folder button on the right */}
-      <div className="flex items-center justify-end px-3 py-1 text-xs">
+      {/* Top Action Row: Open Project + Search */}
+      <div className="px-3.5 py-1.5 flex items-center justify-between shrink-0">
         <button
           type="button"
           onClick={onPickFolder}
-          className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 text-[13px] text-zinc-300 hover:text-white transition-colors cursor-pointer py-1 font-medium"
           title="Open project folder"
         >
-          <FolderPlus className="w-3.5 h-3.5" />
+          <FolderPlus className="w-4 h-4" />
+          <span>Open project</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setIsSearching(!isSearching)
+            if (isSearching) setSearchQuery('')
+          }}
+          className={cn(
+            'p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer',
+            isSearching && 'text-zinc-200'
+          )}
+          title="Search projects"
+        >
+          <Search className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Tree list */}
-      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
-        {projects.map(proj => {
+      {/* Clean Minimal Search Input (only when active) */}
+      {isSearching && (
+        <div className="px-3.5 pb-2 relative">
+          <input
+            type="text"
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search projects..."
+            className="w-full h-7 px-2.5 pr-6 rounded-md bg-[#141414] border border-[#262626] text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Main Project List */}
+      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-0.5 scrollbar-thin">
+        {filteredProjects.map(proj => {
           const isCollapsed = !!collapsedProjects[proj.id]
           const isProjectActive = activeProjectId === proj.id
           const projectSessions = isProjectActive ? sessions : []
 
           return (
-            <div key={proj.id} className="space-y-0.5">
-              {/* Project Folder Row */}
+            <div key={proj.id} className="space-y-0.5 mb-0.5">
+              {/* Project Folder Header - Clean, no background box, starts at edge */}
               <div
                 onClick={() => {
                   onSelectProject(proj.id)
-                  if (collapsedProjects[proj.id]) {
-                    toggleProject(proj.id)
-                  }
+                  toggleProject(proj.id)
                 }}
                 className={cn(
-                  'group flex items-center justify-between px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer',
+                  'group flex items-center justify-between px-1.5 py-1.5 rounded-md transition-colors cursor-pointer select-none',
                   isProjectActive
-                    ? 'text-zinc-200'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+                    ? 'text-white font-medium'
+                    : 'text-zinc-300 hover:text-white hover:bg-white/[0.04]'
                 )}
               >
-                <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                  {!isCollapsed ? (
+                    <FolderOpen className="w-4 h-4 shrink-0 transition-colors text-zinc-200" />
+                  ) : (
+                    <Folder className="w-4 h-4 shrink-0 transition-colors text-zinc-400 group-hover:text-zinc-300" />
+                  )}
+                  <span className="truncate text-sm font-semibold tracking-tight text-zinc-200 group-hover:text-white">{proj.name}</span>
+                </div>
+
+                {/* Hover Actions */}
+                <div
+                  className={cn(
+                    'flex items-center gap-0.5 transition-opacity',
+                    activeMenuId === proj.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  )}
+                >
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      toggleProject(proj.id)
+                      onSelectProject(proj.id)
+                      onNewSession('New Chat')
                     }}
-                    className="p-0.5 text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                    className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                    title="New chat in project"
                   >
-                    {isCollapsed ? (
-                      <ChevronRight className="w-3 h-3 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-3 h-3 shrink-0" />
-                    )}
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
 
-                  <Folder className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                  <span className="truncate text-xs">{proj.name}</span>
-                </div>
-
-                {/* Hover actions for folder */}
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="relative">
+                  <div
+                    className={cn(
+                      'relative transition-opacity',
+                      activeMenuId === proj.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    )}
+                    ref={activeMenuId === proj.id ? projectMenuRef : null}
+                    onMouseLeave={() => {
+                      if (activeMenuId === proj.id) setActiveMenuId(null)
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         setActiveMenuId(activeMenuId === proj.id ? null : proj.id)
                       }}
-                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 cursor-pointer"
+                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
                       title="Project options"
                     >
-                      <MoreVertical className="w-3 h-3" />
+                      <MoreHorizontal className="w-3.5 h-3.5" />
                     </button>
 
                     {activeMenuId === proj.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-full mt-1 w-40 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 z-50"
+                        className="absolute right-0 top-full mt-1 w-32 bg-[#141414] border border-[#262626] rounded-md shadow-xl p-1 z-50 animate-in fade-in duration-100"
                       >
                         <button
                           type="button"
@@ -150,11 +219,13 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
                             onSelectProject(proj.id)
                             onNewSession('New Chat')
                           }}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 rounded text-left cursor-pointer"
+                          className="w-full flex items-center gap-2 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 rounded text-left cursor-pointer transition-colors"
                         >
-                          <Plus className="w-3 h-3" />
+                          <Plus className="w-3.5 h-3.5 text-zinc-400" />
                           <span>New Chat</span>
                         </button>
+
+                        <div className="h-px bg-[#262626] my-0.5" />
 
                         <button
                           type="button"
@@ -162,33 +233,20 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
                             setActiveMenuId(null)
                             onDeleteProject(proj.id)
                           }}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300 rounded text-left cursor-pointer"
+                          className="w-full flex items-center gap-2 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300 rounded text-left cursor-pointer transition-colors"
                         >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Remove Project</span>
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
                         </button>
                       </div>
                     )}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSelectProject(proj.id)
-                      onNewSession('New Chat')
-                    }}
-                    className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 cursor-pointer"
-                    title="New chat in this project"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
 
-              {/* Nested Chats / Sessions */}
+              {/* Nested Project Sessions - Clean indentation, no vertical line */}
               {!isCollapsed && isProjectActive && (
-                <div className="pl-4 space-y-0.5 mt-0.5">
+                <div className="pl-3 space-y-0.5 my-0.5">
                   {projectSessions.map(sess => {
                     const isSessionActive = activeSessionId === sess.id
                     const isEditing = editingSessionId === sess.id
@@ -197,15 +255,16 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
                       <div
                         key={sess.id}
                         onClick={() => {
+                          setSessionMenuId(null)
                           onSelectProject(proj.id)
                           onSelectSession(sess.id)
                         }}
                         title={sess.title}
                         className={cn(
-                          'group relative flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer select-none',
+                          'group flex items-center justify-between px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer select-none',
                           isSessionActive
-                            ? 'bg-zinc-800 text-zinc-100 font-medium shadow-xs'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                            ? 'bg-zinc-800/80 text-white font-medium'
+                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
                         )}
                       >
                         {isEditing ? (
@@ -220,76 +279,64 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
                               if (e.key === 'Enter') handleSaveRename(sess.id)
                               if (e.key === 'Escape') setEditingSessionId(null)
                             }}
-                            className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none"
+                            className="flex-1 bg-[#111] border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-100 outline-none"
                           />
                         ) : (
-                          <span className="truncate flex-1 min-w-0 pr-2">
-                            {sess.title}
-                          </span>
+                          <span className="truncate flex-1 min-w-0 pr-1.5 text-sm">{sess.title}</span>
                         )}
 
-                        {/* Relative Timestamp or Hover Actions (fixed layout, zero size jump) */}
                         {!isEditing && (
-                          <div className="relative flex items-center justify-end shrink-0 w-16 h-5">
-                            <span className="text-[10px] text-zinc-500 group-hover:opacity-0 transition-opacity">
-                              {formatRelativeTime(sess.updatedAt)}
-                            </span>
+                          <div
+                            className={cn(
+                              'relative transition-opacity',
+                              sessionMenuId === sess.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            )}
+                            ref={sessionMenuId === sess.id ? sessionMenuRef : null}
+                            onMouseLeave={() => {
+                              if (sessionMenuId === sess.id) setSessionMenuId(null)
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSessionMenuId(sessionMenuId === sess.id ? null : sess.id)
+                              }}
+                              className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                              title="Chat options"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
 
-                            <div className="absolute right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
-                              <div className="relative">
+                            {sessionMenuId === sess.id && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 top-full mt-1 w-32 bg-[#141414] border border-[#262626] rounded-md shadow-xl p-1 z-50 animate-in fade-in duration-100"
+                              >
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setSessionMenuId(sessionMenuId === sess.id ? null : sess.id)
-                                  }}
-                                  className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 cursor-pointer"
-                                  title="Chat options"
+                                  onClick={() => startRename(sess)}
+                                  className="w-full flex items-center gap-2 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 rounded text-left cursor-pointer transition-colors"
                                 >
-                                  <MoreVertical className="w-3 h-3" />
+                                  <Pencil className="w-3.5 h-3.5 text-zinc-400" />
+                                  <span>Rename</span>
                                 </button>
 
-                                {sessionMenuId === sess.id && (
-                                  <div
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 z-50"
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={() => startRename(sess)}
-                                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 rounded text-left cursor-pointer"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                      <span>Rename</span>
-                                    </button>
+                                <div className="h-px bg-[#262626] my-0.5" />
 
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSessionMenuId(null)
-                                        onDeleteSession(sess.id)
-                                      }}
-                                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300 rounded text-left cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                      <span>Delete</span>
-                                    </button>
-                                  </div>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSessionMenuId(null)
+                                    onDeleteSession(sess.id)
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300 rounded text-left cursor-pointer transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
+                                </button>
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onDeleteSession(sess.id)
-                                }}
-                                className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-red-950/40 cursor-pointer"
-                                title="Delete chat"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -302,16 +349,8 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
         })}
 
         {projects.length === 0 && (
-          <div className="text-center py-10 px-4 space-y-1.5">
-            <FolderPlus className="w-6 h-6 text-zinc-600 mx-auto" />
-            <div className="text-xs text-zinc-500">No projects open</div>
-            <button
-              type="button"
-              onClick={onPickFolder}
-              className="text-xs text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
-            >
-              Open a project folder
-            </button>
+          <div className="text-center py-10 px-2 text-xs text-zinc-600">
+            No projects open
           </div>
         )}
       </div>
