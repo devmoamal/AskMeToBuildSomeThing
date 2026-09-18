@@ -44,7 +44,7 @@
     ],
     "icon": "build/icon.png",
     "category": "public.app-category.developer-tools",
-    "hardenedRuntime": true,
+    "identity": "-",
     "gatekeeperAssess": false
   },
   "dmg": {

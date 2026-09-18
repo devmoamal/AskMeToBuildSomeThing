@@ -165,14 +165,14 @@ Releases are built unsigned by default for open-source distribution:
 The included [`.github/workflows/release.yml`](.github/workflows/release.yml) automatically builds and attaches binaries to GitHub Releases when a version tag is pushed:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 GitHub Actions executes across a build matrix:
-- **Windows**: `AskMeToBuildSomeThing-v1.0.0-win-x64.exe` (NSIS Installer)
-- **macOS**: `AskMeToBuildSomeThing-v1.0.0-mac-arm64.dmg`, `.dmg` (x64), and `.zip`
-- **Linux**: `AskMeToBuildSomeThing-v1.0.0-linux-x64.AppImage` & `.deb`
+- **Windows**: `AskMeToBuildSomeThing-v1.0.1-win-x64.exe` (NSIS Installer)
+- **macOS**: `AskMeToBuildSomeThing-v1.0.1-mac-arm64.dmg`, `.dmg` (x64), and `.zip`
+- **Linux**: `AskMeToBuildSomeThing-v1.0.1-linux-x64.AppImage` & `.deb`
 
 ---
 

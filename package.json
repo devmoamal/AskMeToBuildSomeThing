@@ -1,6 +1,6 @@
 {
   "name": "askmetobuildsomething",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agentic Desktop Assistant with Chats, Projects, Terminal, Canvas, and Questionnaire",
   "author": "Moamal Hussin <dev.moamal@gmail.com>",
   "license": "MIT",
@@ -10,8 +10,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:release": "tsc && vite build && electron-builder --win",
-    "build:release:dir": "tsc && vite build && electron-builder --win --dir",
+    "build:release": "tsc && vite build && electron-builder",
+    "build:release:win": "tsc && vite build && electron-builder --win",
+    "build:release:mac": "tsc && vite build && electron-builder --mac",
+    "build:release:linux": "tsc && vite build && electron-builder --linux",
+    "build:release:dir": "tsc && vite build && electron-builder --dir",
     "build:release:all": "tsc && vite build && electron-builder -mwl",
     "test": "bun test"
   },
