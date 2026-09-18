@@ -52,10 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: |
-          bun x electron-builder --$PLATFORM
-        env:
-          PLATFORM: ${{ matrix.platform }}
+        run: bun x electron-builder --${{ matrix.platform }}
 
       - name: Publish Release Assets
         uses: softprops/action-gh-release@v2
