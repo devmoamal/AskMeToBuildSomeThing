@@ -19,20 +19,26 @@ export interface RunCommandResult {
 }
 
 export class TerminalRunner {
-  static resolveShell(shellType: ShellType = 'powershell'): { executable: string; args: string[] } {
+  static resolveShell(shellType?: ShellType): { executable: string; args: string[] } {
     const isWin = os.platform() === 'win32'
+    const defaultShell: ShellType = isWin ? 'powershell' : 'bash'
+    const target = shellType || defaultShell
 
-    switch (shellType) {
+    switch (target) {
       case 'powershell':
         return isWin
           ? { executable: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command'] }
-          : { executable: 'pwsh', args: ['-NoProfile', '-NonInteractive', '-Command'] }
+          : { executable: 'bash', args: ['-c'] }
       case 'cmd':
-        return { executable: 'cmd.exe', args: ['/c'] }
+        return isWin
+          ? { executable: 'cmd.exe', args: ['/c'] }
+          : { executable: 'sh', args: ['-c'] }
       case 'bash':
         return { executable: 'bash', args: ['-c'] }
       case 'wsl':
-        return { executable: 'wsl.exe', args: ['-e', 'sh', '-c'] }
+        return isWin
+          ? { executable: 'wsl.exe', args: ['-e', 'sh', '-c'] }
+          : { executable: 'bash', args: ['-c'] }
       default:
         return isWin
           ? { executable: 'powershell.exe', args: ['-NoProfile', '-Command'] }
@@ -41,7 +47,9 @@ export class TerminalRunner {
   }
 
   static async run(options: RunCommandOptions): Promise<RunCommandResult> {
-    const { command, cwd, shell = 'powershell', timeoutMs = 60000, onOutput } = options
+    const isWin = os.platform() === 'win32'
+    const defaultShell: ShellType = isWin ? 'powershell' : 'bash'
+    const { command, cwd, shell = defaultShell, timeoutMs = 60000, onOutput } = options
     const shellConfig = this.resolveShell(shell)
 
     return new Promise((resolve) => {

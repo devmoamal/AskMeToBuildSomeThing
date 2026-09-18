@@ -6,7 +6,6 @@ describe('Terminal Runner', () => {
     const chunks: string[] = []
     const res = await TerminalRunner.run({
       command: 'echo "Hello Terminal"',
-      shell: 'powershell',
       onOutput: (c) => chunks.push(c)
     })
 
@@ -17,8 +16,7 @@ describe('Terminal Runner', () => {
 
   it('should handle non-zero exit codes', async () => {
     const res = await TerminalRunner.run({
-      command: 'exit 42',
-      shell: 'powershell'
+      command: 'exit 42'
     })
 
     expect(res.exitCode).toBe(42)

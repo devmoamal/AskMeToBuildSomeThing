@@ -18,7 +18,7 @@ describe('Provider Adapters', () => {
       id: 'p_test',
       name: 'Anthropic',
       type: 'anthropic',
-      baseUrl: 'https://invalid-host-for-testing-fallback.local/v1',
+      baseUrl: 'http://127.0.0.1:59998/v1',
       apiKey: 'sk-ant-test',
       models: [],
       isDefault: true,

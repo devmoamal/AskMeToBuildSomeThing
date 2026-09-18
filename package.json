@@ -2,7 +2,7 @@
   "name": "askmetobuildsomething",
   "version": "1.0.0",
   "description": "Agentic Desktop Assistant with Chats, Projects, Terminal, Canvas, and Questionnaire",
-  "author": "AskMeToBuildSomeThing Contributors",
+  "author": "Moamal Hussin <dev.moamal@gmail.com>",
   "license": "MIT",
   "main": "dist-electron/main.js",
   "type": "module",

@@ -73,6 +73,7 @@
       }
     ],
     "icon": "build/icons",
-    "category": "Development"
+    "category": "Development",
+    "maintainer": "Moamal Hussin <dev.moamal@gmail.com>"
   }
 }

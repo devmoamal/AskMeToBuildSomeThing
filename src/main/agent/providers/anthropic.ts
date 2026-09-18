@@ -43,7 +43,7 @@ export class AnthropicCompatibleAdapter implements ILlmProviderAdapter {
           'x-api-key': config.apiKey,
           'anthropic-version': '2023-06-01'
         },
-        signal: AbortSignal.timeout(6000)
+        signal: AbortSignal.timeout(2500)
       })
 
       if (res.ok) {
