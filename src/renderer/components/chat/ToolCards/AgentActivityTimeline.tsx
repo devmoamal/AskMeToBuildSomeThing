@@ -7,6 +7,7 @@ import { FileReadActionCard } from './FileReadActionCard'
 import { CanvasCard } from './CanvasCard'
 import { QuestionnaireCard } from './QuestionnaireCard'
 import { WebSearchActionCard } from './WebSearchActionCard'
+import { ExplorationActionCard } from './ExplorationActionCard'
 import { VercelBadge } from '../../ui/VercelIcon'
 
 interface AgentActivityTimelineProps {
@@ -27,7 +28,14 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   onApproveTool
 }) => {
   const actionSteps = toolCalls.filter(tc =>
-    tc.toolName === 'use_terminal' || tc.toolName === 'create_file' || tc.toolName === 'read_file' || tc.toolName === 'web_search'
+    tc.toolName === 'use_terminal' ||
+    tc.toolName === 'create_file' ||
+    tc.toolName === 'edit_file' ||
+    tc.toolName === 'read_file' ||
+    tc.toolName === 'web_search' ||
+    tc.toolName === 'list_dir' ||
+    tc.toolName === 'find_files' ||
+    tc.toolName === 'search_code'
   )
   const canvasCalls = toolCalls.filter(tc => tc.toolName === 'make_canvas')
   const questionnaireCalls = toolCalls.filter(tc => tc.toolName === 'ask_user')
@@ -56,8 +64,10 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   const editCount = actionSteps.filter(tc => tc.toolName === 'edit_file').length
   const cmdCount = actionSteps.filter(tc => tc.toolName === 'use_terminal').length
   const searchCount = actionSteps.filter(tc => tc.toolName === 'web_search').length
+  const exploreCount = actionSteps.filter(tc => tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code').length
 
   const summaryParts = []
+  if (exploreCount > 0) summaryParts.push(`${exploreCount} explore`)
   if (readCount > 0) summaryParts.push(`${readCount} read`)
   if (writeCount > 0) summaryParts.push(`${writeCount} create`)
   if (editCount > 0) summaryParts.push(`${editCount} edit`)
@@ -126,6 +136,9 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
                 }
                 if (tc.toolName === 'web_search') {
                   return <WebSearchActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code') {
+                  return <ExplorationActionCard key={tc.id} toolCall={tc} />
                 }
                 return null
               })}

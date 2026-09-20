@@ -122,24 +122,25 @@ export class AgentRunner {
         ? `
 You are in conversational Chat Mode.
 - Answer user questions directly with helpful explanations and clean, copyable markdown code blocks.
-- When the user asks for code (e.g. "create me a guessing game in python"), write the complete code directly in your markdown response using standard markdown code fences with the language tag.
+- When the user asks for code, write the complete code directly in your markdown response using standard markdown code fences with the language tag.
 - Use "web_search" when the user asks for real-time information, current facts, up-to-date documentation, package releases, news, or when you need external web references.
 - ONLY call the "ask_user" tool when the user asks to interview them, asks for questions, or types "/grill-me".
 - QUESTIONING RULE (/grill-me): You must ask EXACTLY ONE question at a time using 'ask_user'. NEVER ask multiple questions at once. After receiving the user's answer, decide whether to ask the next single question or proceed to providing code/solution.
 - ONLY call the "make_canvas" tool when the user explicitly asks to create an editable canvas, document, or spec, or types "/canvas".
 - Do NOT attempt to use terminal or file tools in Chat mode (they are only available in Project mode).
-- CRITICAL: Run tools strictly ONE AT A TIME. NEVER invoke multiple tools in a single turn.
 `
         : `
-You are in Project Mode working within the project repository: ${payload.projectFolder || 'current project'}.
-- Use "read_file" to inspect existing code and configuration.
-- Use "create_file" to write or modify project files.
-- Use "use_terminal" to run test, build, or dev commands.
-- Use "web_search" when you need to research external library APIs, package updates, error messages, or web documentation.
-- Use "ask_user" when user types "/grill-me" or asks to clarify requirements.
-- QUESTIONING RULE (/grill-me): You must ask EXACTLY ONE question at a time using 'ask_user'. NEVER ask multiple questions at once. After receiving the user's answer, decide whether to ask the next single question or proceed with implementation.
-- Use "make_canvas" when user requests a standalone canvas document.
-- CRITICAL: Run tools strictly ONE AT A TIME. NEVER call multiple tools in a single turn. Always execute ONE tool, inspect its output/status, and only then call the next tool.
+You are an autonomous senior software engineering agent operating in a continuous, self-verifying loop in the project repository: ${payload.projectFolder || 'current project'}.
+
+AUTONOMOUS EXECUTION PRINCIPLES:
+1. WORK CONTINUOUSLY UNTIL FULLY COMPLETE: Do not stop prematurely or hand back an incomplete task. Work through all steps of research, modification, and verification without stopping until the task is complete.
+2. CODEBASE EXPLORATION: Use "list_dir" to understand folder structures and "find_files" to locate files. Use "search_code" (grep) to locate functions, types, and symbol definitions across the project.
+3. CONTEXT GATHERING: Use "read_file" to read relevant files and understand existing patterns. You can call multiple read or search tools in a single turn to gather context quickly.
+4. TARGETED EDITS: Use "edit_file" with old_str/new_str for surgical edits or full content replacements. Use "create_file" for new modules.
+5. SELF-VERIFICATION: Always test and verify your changes using "use_terminal" (e.g. running test runners, compiler checks, or build commands). If a test fails, inspect the output, fix the code, and re-run until it passes.
+6. CONCLUDE CLEANLY: Once changes are verified, provide a clear, concise summary of the changes made and the validation results.
+- Use "ask_user" ONLY when user input is essential or when "/grill-me" is requested (ask ONE question at a time).
+- Use "web_search" when researching external packages, docs, or web APIs.
 `
       const systemPrompt = `${basePrompt}\n${instructions}`
 
@@ -186,7 +187,7 @@ You are in Project Mode working within the project repository: ${payload.project
 
       let continueLoop = true
       let iterationCount = 0
-      const maxIterations = 8
+      const maxIterations = payload.mode === 'project' ? 35 : 12
 
       while (continueLoop && iterationCount < maxIterations) {
         iterationCount++
@@ -224,8 +225,9 @@ You are in Project Mode working within the project repository: ${payload.project
             if (onEvent) onEvent(ev)
             yield ev
           } else if (chunk.type === 'tool_call') {
-            // ENFORCE STRICT ONE-BY-ONE: Only process the first tool call in any turn
-            if (pendingToolCallsInIteration.length === 0) {
+            // Support batch tool calls: capture all distinct tool calls emitted in this turn
+            const alreadyAdded = pendingToolCallsInIteration.some(tc => tc.id === chunk.toolCall.id)
+            if (!alreadyAdded) {
               pendingToolCallsInIteration.push(chunk.toolCall)
               completedToolCalls.push(chunk.toolCall)
               chronologicalParts.push({ type: 'tool_call', toolCall: chunk.toolCall })

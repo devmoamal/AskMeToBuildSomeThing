@@ -3,6 +3,31 @@ import { TerminalArgsSchema, type TerminalArgs } from '../../../shared/schemas'
 import type { AgentTool, AgentToolContext } from './types'
 import { TerminalRunner } from '../../terminal/runner'
 
+const SAFE_PATTERNS = [
+  /^bun\s+(test|run\s+build|build|check|pm|--version|-v)/i,
+  /^npm\s+(test|run\s+build|run\s+test|run\s+lint|run\s+check|list|--version|-v)/i,
+  /^yarn\s+(test|build|lint|--version|-v)/i,
+  /^pnpm\s+(test|build|lint|--version|-v)/i,
+  /^tsc(\s+.*)?$/i,
+  /^vite\s+build/i,
+  /^git\s+(status|diff|log|branch|show)/i,
+  /^(ls|dir|pwd|echo|which|cat|head|tail|grep|find)(\s+.*)?$/i
+]
+
+const DANGEROUS_PATTERNS = [
+  /rm\s+-rf\s+[\/\\]/i,
+  /rmdir\s+\/s/i,
+  /git\s+reset\s+--hard/i,
+  /git\s+clean\s+-fd/i,
+  /git\s+push.*--force/i
+]
+
+export function isSafeDevelopmentCommand(command: string): boolean {
+  const trimmed = command.trim()
+  if (DANGEROUS_PATTERNS.some(p => p.test(trimmed))) return false
+  return SAFE_PATTERNS.some(p => p.test(trimmed))
+}
+
 export const terminalTool: AgentTool<TerminalArgs> = {
   name: 'use_terminal',
   description: 'Execute a terminal command in the project folder with live output streaming.',
@@ -31,8 +56,9 @@ export const terminalTool: AgentTool<TerminalArgs> = {
       ? (path.isAbsolute(args.cwd) ? args.cwd : path.resolve(ctx.projectFolder, args.cwd))
       : ctx.projectFolder
 
-    // Check approval if auto-approve is false
-    if (!ctx.settings.autoApproveTerminal && ctx.requireToolApproval) {
+    // Check approval: Auto-approve safe dev commands (tests, builds, lints) or when autoApproveTerminal is enabled
+    const isSafe = isSafeDevelopmentCommand(args.command)
+    if (!ctx.settings.autoApproveTerminal && !isSafe && ctx.requireToolApproval) {
       const approved = await ctx.requireToolApproval('use_terminal', { command: args.command, cwd: workingDir })
       if (!approved) {
         throw new Error(`Command "${args.command}" was rejected by user.`)

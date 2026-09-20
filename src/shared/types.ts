@@ -38,7 +38,18 @@ export type ToolCallStatus = 'pending' | 'requires_approval' | 'executing' | 'co
 
 export type ToolCallRecord = {
   id: string
-  toolName: 'read_file' | 'create_file' | 'edit_file' | 'use_terminal' | 'make_canvas' | 'ask_user' | 'web_search'
+  toolName:
+    | 'read_file'
+    | 'create_file'
+    | 'edit_file'
+    | 'use_terminal'
+    | 'list_dir'
+    | 'find_files'
+    | 'search_code'
+    | 'make_canvas'
+    | 'ask_user'
+    | 'web_search'
+    | (string & {})
   args: any
   status: ToolCallStatus
   result?: any

@@ -6,12 +6,18 @@ import { terminalTool } from './terminal'
 import { canvasTool } from './canvas'
 import { askUserTool } from './ask-user'
 import { webSearchTool } from './web-search'
+import { listDirTool } from './list-dir'
+import { findFilesTool } from './find-files'
+import { searchCodeTool } from './search-code'
 
 export const allTools: AgentTool[] = [
   readFileTool,
   createFileTool,
   editFileTool,
   terminalTool,
+  listDirTool,
+  findFilesTool,
+  searchCodeTool,
   canvasTool,
   askUserTool,
   webSearchTool

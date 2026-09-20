@@ -105,3 +105,24 @@ export const WebSearchArgsSchema = z.object({
 })
 export type WebSearchArgs = z.infer<typeof WebSearchArgsSchema>
 
+export const ListDirArgsSchema = z.object({
+  path: z.string().default('.'),
+  recursive: z.boolean().default(false),
+  maxDepth: z.number().int().min(1).max(5).default(2)
+})
+export type ListDirArgs = z.infer<typeof ListDirArgsSchema>
+
+export const SearchCodeArgsSchema = z.object({
+  query: z.string().min(1, 'Search query is required'),
+  path: z.string().optional(),
+  caseSensitive: z.boolean().default(false),
+  maxResults: z.number().int().min(1).max(100).default(30)
+})
+export type SearchCodeArgs = z.infer<typeof SearchCodeArgsSchema>
+
+export const FindFilesArgsSchema = z.object({
+  pattern: z.string().min(1, 'Search pattern or extension is required'),
+  path: z.string().optional()
+})
+export type FindFilesArgs = z.infer<typeof FindFilesArgsSchema>
+
