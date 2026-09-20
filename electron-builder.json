@@ -14,6 +14,11 @@
     "dist-electron/**/*",
     "package.json"
   ],
+  "publish": {
+    "provider": "github",
+    "owner": "devmoamal",
+    "repo": "AskMeToBuildSomeThing"
+  },
   "win": {
     "target": [
       {

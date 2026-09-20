@@ -66,6 +66,8 @@ jobs:
             dist-release/*.zip
             dist-release/*.AppImage
             dist-release/*.deb
+            dist-release/*.yml
+            dist-release/*.blockmap
           draft: false
           prerelease: false
           generate_release_notes: true

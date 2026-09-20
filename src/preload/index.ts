@@ -74,6 +74,27 @@ const api: ElectronAPI = {
   },
   canvases: {
     save: (canvas) => ipcRenderer.invoke('canvases:save', canvas)
+  },
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
+    downloadUpdate: (downloadUrl: string, assetName: string) =>
+      ipcRenderer.invoke('updater:downloadUpdate', { downloadUrl, assetName }),
+    installUpdate: (filePath: string) => ipcRenderer.invoke('updater:installUpdate', filePath),
+    openReleasePage: (url: string) => ipcRenderer.invoke('updater:openReleasePage', url),
+    onProgress: (callback) => {
+      const listener = (_: any, progress: any) => callback(progress)
+      ipcRenderer.on('updater:progress', listener)
+      return () => {
+        ipcRenderer.removeListener('updater:progress', listener)
+      }
+    },
+    onUpdateDetected: (callback) => {
+      const listener = (_: any, update: any) => callback(update)
+      ipcRenderer.on('updater:updateDetected', listener)
+      return () => {
+        ipcRenderer.removeListener('updater:updateDetected', listener)
+      }
+    }
   }
 }
 

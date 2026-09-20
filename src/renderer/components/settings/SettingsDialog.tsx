@@ -12,9 +12,13 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  Save
+  Save,
+  RefreshCw,
+  Download,
+  ExternalLink,
+  Sparkles
 } from 'lucide-react'
-import type { ProviderConfig, AppSettings } from '../../../shared/types'
+import type { ProviderConfig, AppSettings, UpdateCheckResult, UpdateProgress } from '../../../shared/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -43,12 +47,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onSaveSettings,
   onRefresh
 }) => {
-  const [activeTab, setActiveTab] = useState<'providers' | 'safety' | 'shell' | 'prompts' | 'appearance' | 'data'>('providers')
+  const [activeTab, setActiveTab] = useState<'providers' | 'safety' | 'shell' | 'prompts' | 'appearance' | 'data' | 'updates'>('providers')
 
   // Provider Form State
   const [editingProvider, setEditingProvider] = useState<Partial<ProviderConfig> | null>(null)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Updater State
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null)
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<UpdateProgress | null>(null)
+  const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null)
+  const [installingUpdate, setInstallingUpdate] = useState(false)
+  const [installMessage, setInstallMessage] = useState<string | null>(null)
 
   // Local settings state
   const [localSettings, setLocalSettings] = useState<AppSettings | null>(settings)
@@ -56,6 +69,67 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   React.useEffect(() => {
     setLocalSettings(settings)
   }, [settings])
+
+  React.useEffect(() => {
+    if (!window.api?.updater) return
+    const unbind = window.api.updater.onProgress((p) => {
+      setDownloadProgress(p)
+    })
+    return unbind
+  }, [])
+
+  const handleCheckUpdates = async () => {
+    setCheckingUpdate(true)
+    setInstallMessage(null)
+    try {
+      const res = await window.api.updater.checkForUpdates()
+      setUpdateResult(res)
+    } catch (e: any) {
+      setUpdateResult({ available: false, currentVersion: 'unknown', error: e.message })
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
+
+  const handleDownloadUpdate = async () => {
+    if (!updateResult?.updateInfo) return
+    setDownloadingUpdate(true)
+    setDownloadProgress(null)
+    setInstallMessage(null)
+    try {
+      const res = await window.api.updater.downloadUpdate(
+        updateResult.updateInfo.downloadUrl,
+        updateResult.updateInfo.assetName
+      )
+      if (res.success && res.filePath) {
+        setDownloadedFilePath(res.filePath)
+        setInstallMessage('Download complete! Ready to install.')
+      } else {
+        setInstallMessage(`Download failed: ${res.error || 'Unknown error'}`)
+      }
+    } catch (e: any) {
+      setInstallMessage(`Download failed: ${e.message}`)
+    } finally {
+      setDownloadingUpdate(false)
+    }
+  }
+
+  const handleInstallUpdate = async () => {
+    if (!downloadedFilePath) return
+    setInstallingUpdate(true)
+    try {
+      const res = await window.api.updater.installUpdate(downloadedFilePath)
+      if (res.success) {
+        setInstallMessage(res.message || 'Installer launched.')
+      } else {
+        setInstallMessage(`Installation error: ${res.error || 'Unknown error'}`)
+      }
+    } catch (e: any) {
+      setInstallMessage(`Installation error: ${e.message}`)
+    } finally {
+      setInstallingUpdate(false)
+    }
+  }
 
   if (!isOpen || !localSettings) return null
 
@@ -209,6 +283,27 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             >
               <Database className="w-4 h-4" />
               <span>Data & History</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('updates')
+                if (!updateResult && !checkingUpdate) {
+                  handleCheckUpdates()
+                }
+              }}
+              className={cn(
+                'w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer text-left',
+                activeTab === 'updates' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
+              )}
+            >
+              <RefreshCw className={cn('w-4 h-4', checkingUpdate && 'animate-spin')} />
+              <div className="flex items-center justify-between flex-1">
+                <span>Updates</span>
+                {updateResult?.available && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </div>
             </button>
           </nav>
 
@@ -593,6 +688,165 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     </Button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* 7. Updates Tab */}
+            {activeTab === 'updates' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-sm flex items-center gap-2">
+                      App Updates
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        v{updateResult?.currentVersion || '1.0.1'}
+                      </Badge>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Check and install automated updates directly from GitHub Releases.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCheckUpdates}
+                    disabled={checkingUpdate || downloadingUpdate}
+                    className="h-8 text-xs gap-1.5"
+                  >
+                    <RefreshCw className={cn('w-3.5 h-3.5', checkingUpdate && 'animate-spin')} />
+                    {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+                  </Button>
+                </div>
+
+                {/* Status Cards */}
+                {checkingUpdate && (
+                  <div className="p-4 rounded-lg border border-border bg-card/60 flex items-center gap-3 text-xs text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    Checking for latest releases on GitHub...
+                  </div>
+                )}
+
+                {!checkingUpdate && updateResult && !updateResult.available && !updateResult.error && (
+                  <div className="p-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 space-y-1">
+                    <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
+                      <CheckCircle2 className="w-4 h-4" />
+                      You're using the latest version
+                    </div>
+                    <p className="text-[11px] text-muted-foreground pl-6">
+                      v{updateResult.currentVersion} is the newest available release.
+                    </p>
+                  </div>
+                )}
+
+                {!checkingUpdate && updateResult?.error && (
+                  <div className="p-4 rounded-lg border border-destructive/30 bg-destructive/5 space-y-1">
+                    <div className="flex items-center gap-2 text-xs font-medium text-destructive">
+                      <XCircle className="w-4 h-4" />
+                      Check failed
+                    </div>
+                    <p className="text-[11px] text-muted-foreground pl-6">
+                      {updateResult.error}
+                    </p>
+                  </div>
+                )}
+
+                {!checkingUpdate && updateResult?.available && updateResult.updateInfo && (
+                  <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="font-semibold text-sm text-foreground">
+                          Version {updateResult.updateInfo.version} Available
+                        </span>
+                      </div>
+                      <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
+                        New Release
+                      </Badge>
+                    </div>
+
+                    {/* Release Notes */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Release Notes
+                      </div>
+                      <div className="max-h-48 overflow-y-auto p-3 rounded-md bg-background/70 border border-border text-xs text-foreground/90 font-mono whitespace-pre-wrap leading-relaxed">
+                        {updateResult.updateInfo.releaseNotes}
+                      </div>
+                    </div>
+
+                    {/* Asset Info */}
+                    <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                      <span>Package: {updateResult.updateInfo.assetName}</span>
+                      {updateResult.updateInfo.assetSize > 0 && (
+                        <span>{(updateResult.updateInfo.assetSize / (1024 * 1024)).toFixed(1)} MB</span>
+                      )}
+                    </div>
+
+                    {/* Progress Bar if downloading */}
+                    {downloadingUpdate && downloadProgress && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Downloading update...</span>
+                          <span className="font-mono">{downloadProgress.percent}%</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-200"
+                            style={{ width: `${downloadProgress.percent}%` }}
+                          />
+                        </div>
+                        <div className="text-[11px] text-muted-foreground text-right font-mono">
+                          {(downloadProgress.transferred / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total / (1024 * 1024)).toFixed(1)} MB
+                          {downloadProgress.bytesPerSecond > 0 && ` (${(downloadProgress.bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s)`}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Message */}
+                    {installMessage && (
+                      <div className="text-xs text-emerald-400 flex items-center gap-1.5 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {installMessage}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-1">
+                      {!downloadedFilePath && !downloadingUpdate && (
+                        <Button
+                          size="sm"
+                          onClick={handleDownloadUpdate}
+                          className="h-8 text-xs gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Download & Install
+                        </Button>
+                      )}
+
+                      {downloadedFilePath && (
+                        <Button
+                          size="sm"
+                          onClick={handleInstallUpdate}
+                          disabled={installingUpdate}
+                          className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          <RefreshCw className={cn('w-3.5 h-3.5', installingUpdate && 'animate-spin')} />
+                          {installingUpdate ? 'Installing...' : 'Install & Apply Now'}
+                        </Button>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.api.updater.openReleasePage(updateResult.updateInfo!.htmlUrl)}
+                        className="h-8 text-xs gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        View on GitHub
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

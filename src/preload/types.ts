@@ -10,7 +10,10 @@ import type {
   SendPromptPayload,
   AgentStreamEvent,
   UserResponsePayload,
-  ToolApprovalPayload
+  ToolApprovalPayload,
+  UpdateInfo,
+  UpdateProgress,
+  UpdateCheckResult
 } from '../shared/types'
 
 export interface ElectronAPI {
@@ -66,6 +69,14 @@ export interface ElectronAPI {
   }
   canvases: {
     save: (canvas: { id: string; title: string; content: string; language?: string; chatId?: string; projectSessionId?: string }) => Promise<CanvasDocument>
+  }
+  updater: {
+    checkForUpdates: () => Promise<UpdateCheckResult>
+    downloadUpdate: (downloadUrl: string, assetName: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    installUpdate: (filePath: string) => Promise<{ success: boolean; message?: string; error?: string }>
+    openReleasePage: (url: string) => Promise<void>
+    onProgress: (callback: (progress: UpdateProgress) => void) => () => void
+    onUpdateDetected: (callback: (update: UpdateInfo) => void) => () => void
   }
 }
 

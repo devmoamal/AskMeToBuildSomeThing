@@ -1,12 +1,23 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAppStore } from './hooks/useAppStore'
 import { AppSidebar } from './components/sidebar/AppSidebar'
 import { ChatView } from './components/chat/ChatView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { OnboardingModal } from './components/onboarding/OnboardingModal'
+import { Sparkles, X } from 'lucide-react'
+import type { UpdateInfo } from '../shared/types'
 
 export const App: React.FC = () => {
   const store = useAppStore()
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null)
+
+  useEffect(() => {
+    if (!window.api?.updater) return
+    const unbind = window.api.updater.onUpdateDetected((update) => {
+      setAvailableUpdate(update)
+    })
+    return unbind
+  }, [])
 
   // Apply theme class to documentElement
   useEffect(() => {
@@ -201,6 +212,37 @@ export const App: React.FC = () => {
           store.refreshState()
         }}
       />
+
+      {/* Background Update Notification Toast */}
+      {availableUpdate && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 p-3 rounded-lg border border-primary/40 bg-card/95 backdrop-blur shadow-2xl text-xs text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="p-2 rounded-md bg-primary/10 text-primary">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-xs text-foreground">Update Available: v{availableUpdate.version}</div>
+            <div className="text-[11px] text-muted-foreground">A new version is available on GitHub.</div>
+          </div>
+          <div className="flex items-center gap-1.5 ml-2">
+            <button
+              onClick={() => {
+                store.setIsSettingsOpen(true)
+                setAvailableUpdate(null)
+              }}
+              className="px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground font-medium text-xs hover:bg-primary/90 transition-colors cursor-pointer"
+            >
+              View Update
+            </button>
+            <button
+              onClick={() => setAvailableUpdate(null)}
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground transition-colors cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

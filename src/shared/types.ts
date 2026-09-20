@@ -129,3 +129,28 @@ export type TerminalOutputEvent = {
   sessionId: string
   data: string
 }
+
+export type UpdateInfo = {
+  version: string
+  releaseName: string
+  releaseNotes: string
+  publishedAt: string
+  downloadUrl: string
+  assetName: string
+  assetSize: number
+  htmlUrl: string
+}
+
+export type UpdateProgress = {
+  percent: number
+  bytesPerSecond: number
+  transferred: number
+  total: number
+}
+
+export type UpdateCheckResult = {
+  available: boolean
+  currentVersion: string
+  updateInfo?: UpdateInfo
+  error?: string
+}
