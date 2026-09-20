@@ -1,46 +1,13 @@
 import { app, ipcMain, shell, type BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import type { UpdateCheckResult, UpdateInfo, UpdateProgress } from '../../shared/types'
 import { isNewerVersion } from '../../shared/semver'
+import { findMatchingAsset } from '../../shared/updater-utils'
 
 const GITHUB_REPO = 'devmoamal/AskMeToBuildSomeThing'
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
-
-function findMatchingAsset(assets: any[]): any | null {
-  const platform = process.platform
-  const arch = process.arch
-
-  if (platform === 'win32') {
-    return assets.find((a: any) => a.name.endsWith('.exe')) || null
-  }
-
-  if (platform === 'darwin') {
-    if (arch === 'arm64') {
-      return (
-        assets.find((a: any) => a.name.includes('arm64') && a.name.endsWith('.dmg')) ||
-        assets.find((a: any) => a.name.endsWith('.dmg')) ||
-        null
-      )
-    }
-    return (
-      assets.find((a: any) => (a.name.includes('x64') || a.name.includes('x86_64')) && a.name.endsWith('.dmg')) ||
-      assets.find((a: any) => a.name.endsWith('.dmg')) ||
-      null
-    )
-  }
-
-  if (platform === 'linux') {
-    return (
-      assets.find((a: any) => a.name.endsWith('.AppImage')) ||
-      assets.find((a: any) => a.name.endsWith('.deb')) ||
-      null
-    )
-  }
-
-  return null
-}
 
 export async function fetchLatestRelease(): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion()
@@ -180,6 +147,17 @@ export function registerUpdaterIpc(mainWindow: BrowserWindow) {
     }
   )
 
+  function getCurrentAppBundlePath(): string {
+    try {
+      const exePath = app.getPath('exe')
+      const match = exePath.match(/^(.*?\.app)\/Contents\/MacOS\//)
+      if (match && match[1]) {
+        return match[1]
+      }
+    } catch {}
+    return '/Applications/AskMeToBuildSomeThing.app'
+  }
+
   ipcMain.handle(
     'updater:installUpdate',
     async (_, filePath: string): Promise<{ success: boolean; message?: string; error?: string }> => {
@@ -191,20 +169,103 @@ export function registerUpdaterIpc(mainWindow: BrowserWindow) {
         const platform = process.platform
 
         if (platform === 'win32') {
-          // Launch Windows NSIS installer and exit app
-          const child = spawn(filePath, [], {
+          // Launch Windows NSIS installer silently (/S) and exit app
+          const child = spawn(filePath, ['/S'], {
             detached: true,
             stdio: 'ignore'
           })
           child.unref()
-          setTimeout(() => app.quit(), 500)
-          return { success: true, message: 'Installer launched. Exiting app...' }
+          setTimeout(() => app.exit(0), 500)
+          return { success: true, message: 'Installing update silently and restarting...' }
         }
 
         if (platform === 'darwin') {
-          // On macOS, open the DMG file so user can drag to Applications or run installer
-          await shell.openPath(filePath)
-          return { success: true, message: 'DMG opened in Finder. Drag AskMeToBuildSomeThing to Applications.' }
+          const targetAppPath = getCurrentAppBundlePath()
+          const tempDir = app.getPath('temp')
+          const stagingDir = path.join(tempDir, `update-app-${Date.now()}`)
+          fs.mkdirSync(stagingDir, { recursive: true })
+
+          let extractedAppPath = ''
+
+          if (filePath.endsWith('.zip')) {
+            // Unpack directly via ditto preserving codesign signatures and permissions
+            execSync(`ditto -xk "${filePath}" "${stagingDir}"`)
+            const items = fs.readdirSync(stagingDir)
+            const appFolder = items.find(i => i.endsWith('.app'))
+            if (!appFolder) {
+              throw new Error('No .app bundle found inside downloaded update archive')
+            }
+            extractedAppPath = path.join(stagingDir, appFolder)
+          } else if (filePath.endsWith('.dmg')) {
+            // Mount DMG silently without opening Finder
+            const mountPoint = path.join(tempDir, `update-mount-${Date.now()}`)
+            fs.mkdirSync(mountPoint, { recursive: true })
+            execSync(`hdiutil attach "${filePath}" -nobrowse -mountpoint "${mountPoint}" -quiet`)
+            try {
+              const items = fs.readdirSync(mountPoint)
+              const appFolder = items.find(i => i.endsWith('.app'))
+              if (!appFolder) {
+                throw new Error('No .app bundle found inside downloaded DMG')
+              }
+              extractedAppPath = path.join(stagingDir, appFolder)
+              execSync(`cp -R "${path.join(mountPoint, appFolder)}" "${extractedAppPath}"`)
+            } finally {
+              try {
+                execSync(`hdiutil detach "${mountPoint}" -quiet -force`)
+              } catch {}
+            }
+          } else {
+            throw new Error('Unsupported macOS update package: ' + filePath)
+          }
+
+          // Create detached shell script to swap app bundle, strip quarantine, and relaunch
+          const scriptPath = path.join(tempDir, `apply-update-${Date.now()}.sh`)
+          const scriptContent = `#!/bin/bash
+PID=$1
+NEW_APP="$2"
+TARGET_APP="$3"
+
+COUNT=0
+while kill -0 $PID 2>/dev/null; do
+  sleep 0.1
+  COUNT=$((COUNT+1))
+  if [ $COUNT -ge 100 ]; then
+    kill -9 $PID 2>/dev/null
+    break
+  fi
+done
+
+# Atomically replace target application
+rm -rf "$TARGET_APP"
+cp -R "$NEW_APP" "$TARGET_APP"
+
+# Strip quarantine attribute to avoid Gatekeeper launch delays/bouncing
+xattr -cr "$TARGET_APP" 2>/dev/null || true
+
+# Clean up temporary files
+rm -rf "$NEW_APP"
+
+# Launch updated application
+open -n "$TARGET_APP"
+`
+          fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
+
+          const child = spawn('/bin/bash', [
+            scriptPath,
+            String(process.pid),
+            extractedAppPath,
+            targetAppPath
+          ], {
+            detached: true,
+            stdio: 'ignore'
+          })
+          child.unref()
+
+          setTimeout(() => {
+            app.exit(0)
+          }, 400)
+
+          return { success: true, message: 'Update installed! Restarting application...' }
         }
 
         if (platform === 'linux') {

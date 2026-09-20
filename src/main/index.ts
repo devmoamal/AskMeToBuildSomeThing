@@ -20,7 +20,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#09090b',
     autoHideMenuBar: true,
-    show: true,
+    show: false,
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: false,
@@ -33,9 +33,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
-    mainWindow?.setAlwaysOnTop(true)
     mainWindow?.focus()
-    mainWindow?.setAlwaysOnTop(false)
   })
 
   mainWindow.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
@@ -44,10 +42,6 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('[Main Process] Renderer finished loading successfully.')
-    mainWindow?.show()
-    mainWindow?.setAlwaysOnTop(true)
-    mainWindow?.focus()
-    mainWindow?.setAlwaysOnTop(false)
   })
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {

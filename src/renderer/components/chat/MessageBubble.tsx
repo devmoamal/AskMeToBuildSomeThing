@@ -75,7 +75,7 @@ interface MessageBubbleProps {
   onRollbackRequest?: (message: Message) => void
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({
+const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   message,
   onOpenCanvas,
   onSubmitAnswers,
@@ -349,3 +349,5 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     </div>
   )
 }
+
+export const MessageBubble = React.memo(MessageBubbleComponent)
