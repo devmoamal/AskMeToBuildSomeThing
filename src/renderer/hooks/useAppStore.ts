@@ -14,13 +14,13 @@ import type {
 import type { QuestionnairePayload } from '../../shared/schemas'
 
 export function useAppStore() {
-  const [activeTab, setActiveTab] = useState<'chats' | 'projects'>('chats')
+  const [activeTab, setActiveTab] = useState<'chats' | 'projects'>('projects')
   const [chats, setChats] = useState<Chat[]>([])
   const [chatGroups, setChatGroups] = useState<ChatGroup[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
 
   const [projects, setProjects] = useState<Project[]>([])
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [activeProjectId, setActiveProjectId] = useState<string>('__no_project__')
   const [projectSessions, setProjectSessions] = useState<ProjectSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
 
@@ -51,15 +51,14 @@ export function useAppStore() {
 
   const isInitializedRef = useRef(false)
 
-  const activeTargetId = activeTab === 'chats' ? activeChatId : activeSessionId
+  const activeTargetId = activeSessionId
   const currentThreadModel = activeTargetId ? selectedModels[activeTargetId] : undefined
 
   const setSelectedModel = (providerId: string, model: string) => {
-    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
-    if (!targetId) return
+    if (!activeSessionId) return
     setSelectedModels(prev => ({
       ...prev,
-      [targetId]: { providerId, model }
+      [activeSessionId]: { providerId, model }
     }))
   }
 
@@ -70,18 +69,14 @@ export function useAppStore() {
       return
     }
     try {
-      const [fetchedProviders, fetchedSettings, fetchedChats, fetchedGroups, fetchedProjects] = await Promise.all([
+      const [fetchedProviders, fetchedSettings, fetchedProjects] = await Promise.all([
         window.api.providers.getAll(),
         window.api.settings.get(),
-        window.api.chats.getAll(),
-        window.api.chats.getGroups(),
         window.api.projects.getAll()
       ])
 
       setProviders(fetchedProviders)
       setSettings(fetchedSettings)
-      setChats(fetchedChats)
-      setChatGroups(fetchedGroups)
       setProjects(fetchedProjects)
 
       // Guard: If no providers exist, open onboarding modal!
@@ -89,15 +84,9 @@ export function useAppStore() {
         setIsOnboardingOpen(true)
       }
 
-      // Default selection ONLY on very first boot (never overwrite activeChatId when in draft mode)
       if (!isInitializedRef.current) {
         isInitializedRef.current = true
-        if (fetchedChats.length > 0) {
-          setActiveChatId(fetchedChats[0].id)
-        }
-        if (fetchedProjects.length > 0) {
-          setActiveProjectId(fetchedProjects[0].id)
-        }
+        setActiveProjectId('__no_project__')
       }
     } catch (e) {
       console.error('Error loading initial app state:', e)
@@ -125,21 +114,15 @@ export function useAppStore() {
   // Load messages and canvases when active thread changes
   useEffect(() => {
     if (!window.api) return
-    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
-    if (!targetId) {
+    if (!activeSessionId) {
       setMessages([])
       setCanvases([])
       return
     }
 
-    if (activeTab === 'chats') {
-      window.api.chats.getMessages(targetId).then(setMessages)
-      window.api.chats.getCanvases(targetId).then(setCanvases)
-    } else {
-      window.api.projects.getMessages(targetId).then(setMessages)
-      window.api.projects.getCanvases(targetId).then(setCanvases)
-    }
-  }, [activeTab, activeChatId, activeSessionId])
+    window.api.projects.getMessages(activeSessionId).then(setMessages)
+    window.api.projects.getCanvases(activeSessionId).then(setCanvases)
+  }, [activeSessionId])
 
   // Listen to streaming IPC events from AgentRunner
   useEffect(() => {
@@ -150,15 +133,12 @@ export function useAppStore() {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant') {
             const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
-            if (existingParts.length === 0 || existingParts[existingParts.length - 1].type !== 'text') {
-              existingParts.push({ type: 'text', text: event.text })
+            const textPartIdx = existingParts.findIndex(p => p.type === 'text')
+            if (textPartIdx !== -1) {
+              const currentPart = existingParts[textPartIdx] as { type: 'text'; text: string }
+              existingParts[textPartIdx] = { type: 'text', text: currentPart.text + event.text }
             } else {
-              const lastIdx = existingParts.length - 1
-              const prevTextPart = existingParts[lastIdx] as { type: 'text'; text: string }
-              existingParts[lastIdx] = {
-                type: 'text',
-                text: prevTextPart.text + event.text
-              }
+              existingParts.push({ type: 'text', text: event.text })
             }
             return [
               ...prev.slice(0, -1),
@@ -265,7 +245,9 @@ export function useAppStore() {
           ]
         })
       } else if (event.type === 'tool_call_done') {
-        setActiveApproval(prev => prev?.toolCallId === event.id ? null : prev)
+        if (activeApproval && activeApproval.toolCallId === event.id) {
+          setActiveApproval(null)
+        }
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (!last) return prev
@@ -302,151 +284,94 @@ export function useAppStore() {
         })
         setActiveCanvas(event.canvas)
       } else if (event.type === 'title_generated') {
-        setChats(prev => prev.map(c => c.id === event.targetId ? { ...c, title: event.title } : c))
         setProjectSessions(prev => prev.map(s => s.id === event.targetId ? { ...s, title: event.title } : s))
       } else if (event.type === 'done') {
         setIsGenerating(false)
         setActiveQuestionnaire(null)
         setActiveApproval(null)
-        // Refresh messages and canvases from db to ensure consistency
-        const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
-        if (targetId) {
-          if (activeTab === 'chats') {
-            window.api.chats.getMessages(targetId).then(setMessages)
-            window.api.chats.getCanvases(targetId).then((newCanvases) => {
-              setCanvases(newCanvases)
-              setActiveCanvas(curr => {
-                if (!curr) return null
-                const updated = newCanvases.find(c => c.id === curr.id)
-                return updated || curr
-              })
+
+        if (activeSessionId) {
+          window.api.projects.getMessages(activeSessionId).then(setMessages)
+          window.api.projects.getCanvases(activeSessionId).then((newCanvases) => {
+            setCanvases(newCanvases)
+            setActiveCanvas(curr => {
+              if (!curr) return null
+              const updated = newCanvases.find(c => c.id === curr.id)
+              return updated || curr
             })
-          } else {
-            window.api.projects.getMessages(targetId).then(setMessages)
-            window.api.projects.getCanvases(targetId).then((newCanvases) => {
-              setCanvases(newCanvases)
-              setActiveCanvas(curr => {
-                if (!curr) return null
-                const updated = newCanvases.find(c => c.id === curr.id)
-                return updated || curr
-              })
-            })
-          }
+          })
         }
+        // Always re-fetch settings so customize_app changes apply immediately
+        window.api.settings.get().then(setSettings)
       } else if (event.type === 'error') {
         setIsGenerating(false)
         setActiveQuestionnaire(null)
         setActiveApproval(null)
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          const errorMessageText = `⚠️ **Connection Error:** ${event.error}\n\nPlease check your internet connection or AI provider settings and try again.`
-          if (last && last.role === 'assistant' && !last.content) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                content: errorMessageText,
-                parts: [{ type: 'text', text: errorMessageText }]
-              }
-            ]
-          } else {
-            return [
-              ...prev,
-              {
-                id: `error_${Date.now()}`,
-                role: 'assistant',
-                content: errorMessageText,
-                parts: [{ type: 'text', text: errorMessageText }],
-                createdAt: Date.now()
-              }
-            ]
-          }
-        })
       }
     })
 
-    return () => unsubscribe()
-  }, [activeTab, activeChatId, activeSessionId])
+    return () => {
+      unsubscribe()
+    }
+  }, [activeSessionId, activeApproval])
 
-  // Actions
-  const createNewChat = (title = 'New Chat', groupId?: string | null) => {
-    setActiveChatId(null)
-    setDraftChatGroupId(groupId || null)
-    setMessages([])
-    setCanvases([])
-  }
-
-  const createChatGroup = async (name: string) => {
-    const id = `group_${Date.now()}`
-    await window.api.chats.saveGroup({ id, name })
-    const updated = await window.api.chats.getGroups()
-    setChatGroups(updated)
-  }
-
-  const toggleGroupCollapse = async (group: ChatGroup) => {
-    await window.api.chats.saveGroup({ ...group, isCollapsed: !group.isCollapsed })
-    const updated = await window.api.chats.getGroups()
-    setChatGroups(updated)
-  }
-
-  const renameChat = async (chatId: string, newTitle: string) => {
-    if (!newTitle.trim()) return
-    const updated = await window.api.chats.save({ id: chatId, title: newTitle.trim() })
-    setChats(prev => prev.map(c => c.id === chatId ? { ...c, title: updated.title } : c))
-  }
-
-  const renameSession = async (sessionId: string, newTitle: string) => {
-    if (!newTitle.trim() || !activeProjectId) return
-    const updated = await window.api.projects.saveSession({ id: sessionId, title: newTitle.trim(), projectId: activeProjectId })
-    setProjectSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: updated.title } : s))
-  }
+  useEffect(() => {
+    if (!window.api?.scheduler) return
+    const unbind = window.api.scheduler.onTaskCompleted((task) => {
+      if (activeSessionId && activeSessionId === task.targetId) {
+        window.api.projects.getMessages(activeSessionId).then(setMessages)
+      } else if (activeChatId && activeChatId === task.targetId) {
+        window.api.chats.getMessages(activeChatId).then(setMessages)
+      }
+    })
+    return unbind
+  }, [activeSessionId, activeChatId])
 
   const selectProjectFolder = async () => {
     const folder = await window.api.projects.pickFolder()
     if (!folder) return
-    const name = folder.split(/[\\/]/).filter(Boolean).pop() || 'Project'
-    const id = `proj_${Date.now()}`
-    const project = await window.api.projects.save({ id, name, folderPath: folder })
-
-    // Create default session
-    const sessionId = `sess_${Date.now()}`
-    const session = await window.api.projects.saveSession({
-      id: sessionId,
-      projectId: project.id,
-      title: 'General'
+    const name = folder.split(/[/\\]/).filter(Boolean).pop() || 'Project'
+    const newProject = await window.api.projects.save({
+      id: `proj_${Date.now()}`,
+      name,
+      folderPath: folder
     })
-
-    setProjects(prev => [project, ...prev.filter(p => p.id !== project.id)])
-    setActiveProjectId(project.id)
-    setProjectSessions([session])
-    setActiveSessionId(session.id)
-    setActiveTab('projects')
+    setProjects(prev => [newProject, ...prev])
+    setActiveProjectId(newProject.id)
   }
 
-  const createProjectSession = (title = 'New Chat') => {
-    setActiveSessionId(null)
-    setMessages([])
-    setCanvases([])
+  const createProjectSession = async (title = 'New Chat', targetProjId?: string) => {
+    const projId = targetProjId || activeProjectId || '__no_project__'
+    const newSession = await window.api.projects.saveSession({
+      id: `sess_${Date.now()}`,
+      projectId: projId,
+      title
+    })
+    setProjectSessions(prev => [newSession, ...prev])
+    setActiveProjectId(projId)
+    setActiveSessionId(newSession.id)
+    return newSession
+  }
+
+  const renameSession = async (sessionId: string, newTitle: string) => {
+    const sess = projectSessions.find(s => s.id === sessionId)
+    const pid = sess?.projectId || activeProjectId || '__no_project__'
+    await window.api.projects.saveSession({ id: sessionId, projectId: pid, title: newTitle })
+    setProjectSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s))
   }
 
   const sendPrompt = async (
     text: string,
     attachments?: Array<{ name: string; path: string; isImage?: boolean }>
   ) => {
-    let targetId = activeTab === 'chats' ? activeChatId : activeSessionId
+    let targetId = activeSessionId
 
-    // Draft mode: initialize chat or project session on first send
-    if (activeTab === 'chats' && !targetId) {
-      const newChatId = `chat_${Date.now()}`
-      const createdChat = await window.api.chats.save({ id: newChatId, title: 'New Chat', groupId: draftChatGroupId })
-      setChats(prev => [createdChat, ...prev])
-      setActiveChatId(createdChat.id)
-      targetId = createdChat.id
-    } else if (activeTab === 'projects' && !targetId && activeProjectId) {
+    if (!targetId) {
+      const projId = activeProjectId || '__no_project__'
       const newSessId = `sess_${Date.now()}`
       const createdSession = await window.api.projects.saveSession({
         id: newSessId,
-        projectId: activeProjectId,
+        projectId: projId,
         title: 'New Chat'
       })
       setProjectSessions(prev => [createdSession, ...prev])
@@ -458,12 +383,11 @@ export function useAppStore() {
 
     // Quick trigger: typing exactly /canvas creates starter canvas workspace immediately
     if (text.trim() === '/canvas' && (!attachments || attachments.length === 0)) {
-      const starterContent = `# Canvas\n\n.ابدأ اكتب هنا أي فكرة، ملاحظات، خطة، مشروع، كود، أو محتوى تريد نشتغل عليه.\n\n### Ideas\n- \n\n### Notes\n- \n\n### Tasks\n- [ ] \n\n### Code / Technical\n\`\`\`\n\n\`\`\`\n\n### References\n- \n`
+      const starterContent = `# Canvas\n\n### Ideas\n- \n\n### Notes\n- \n\n### Tasks\n- [ ] \n\n### Code\n\`\`\`\n\n\`\`\`\n`
       const canvasId = `canvas_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
       const doc: CanvasDocument = {
         id: canvasId,
-        chatId: activeTab === 'chats' ? targetId : undefined,
-        projectSessionId: activeTab === 'projects' ? targetId : undefined,
+        projectSessionId: targetId,
         title: 'New Canvas',
         language: 'markdown',
         content: starterContent,
@@ -478,8 +402,6 @@ export function useAppStore() {
     }
 
     let finalProvider = providers.find(p => p.id === currentThreadModel?.providerId)
-    let finalModel = currentThreadModel?.model
-
     if (!finalProvider) {
       finalProvider = providers.find(p => p.isDefault) || providers[0]
     }
@@ -487,26 +409,20 @@ export function useAppStore() {
       setIsOnboardingOpen(true)
       return
     }
-    if (!finalModel) {
-      finalModel = finalProvider.defaultModel || finalProvider.models[0] || 'default'
-    }
 
-    const activeProj = projects.find(p => p.id === activeProjectId)
+    const finalModel = currentThreadModel?.model || finalProvider.defaultModel || (finalProvider.models?.[0]) || 'default'
 
-    // If there are attachments, read them and append to the prompt context
     let fullPrompt = text
     if (attachments && attachments.length > 0) {
       const fileContexts: string[] = []
       for (const att of attachments) {
-        if (!att.isImage && window.api?.projects?.readFile) {
+        if (!att.isImage) {
           try {
             const content = await window.api.projects.readFile(att.path)
-            fileContexts.push(`--- File: ${att.name} (${att.path}) ---\n${content}`)
+            fileContexts.push(`--- File: ${att.name} ---\n${content}\n--- End of File ---`)
           } catch {
-            fileContexts.push(`--- Attached file: ${att.name} (${att.path}) ---`)
+            fileContexts.push(`--- File: ${att.name} (Binary or unreadable) ---`)
           }
-        } else {
-          fileContexts.push(`--- Attached image: ${att.name} (${att.path}) ---`)
         }
       }
       if (fileContexts.length > 0) {
@@ -517,8 +433,7 @@ export function useAppStore() {
     // Add user message optimistically to UI
     const optUserMsg: Message = {
       id: `msg_opt_${Date.now()}`,
-      chatId: activeTab === 'chats' ? targetId : undefined,
-      projectSessionId: activeTab === 'projects' ? targetId : undefined,
+      projectSessionId: targetId,
       role: 'user',
       content: text || (attachments ? `[Attached ${attachments.length} file(s)]` : ''),
       createdAt: Date.now()
@@ -526,10 +441,13 @@ export function useAppStore() {
     setMessages(prev => [...prev, optUserMsg])
     setIsGenerating(true)
 
+    const isNoProj = !activeProjectId || activeProjectId === '__no_project__'
+    const activeProj = isNoProj ? null : projects.find(p => p.id === activeProjectId)
+
     await window.api.agent.sendPrompt({
-      mode: activeTab === 'chats' ? 'chat' : 'project',
+      mode: isNoProj ? 'chat' : 'project',
       targetId,
-      projectFolder: activeTab === 'projects' ? activeProj?.folderPath : undefined,
+      projectFolder: activeProj?.folderPath,
       prompt: fullPrompt,
       providerId: finalProvider.id,
       model: finalModel
@@ -547,25 +465,21 @@ export function useAppStore() {
   }
 
   const abortGeneration = async () => {
-    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
-    if (targetId) {
-      await window.api.agent.abort(targetId)
-      setIsGenerating(false)
-    }
+    if (!activeSessionId || !window.api) return
+    await window.api.agent.abort(activeSessionId)
+    setIsGenerating(false)
+    setActiveQuestionnaire(null)
+    setActiveApproval(null)
   }
 
-  const createCanvasDocument = async (title = 'New Canvas', initialContent?: string, language = 'markdown') => {
-    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
-    if (!targetId) return null
-    const starterContent = initialContent ?? `# Canvas\n\n.ابدأ اكتب هنا أي فكرة، ملاحظات، خطة، مشروع، كود، أو محتوى تريد نشتغل عليه.\n\n### Ideas\n- \n\n### Notes\n- \n\n### Tasks\n- [ ] \n\n### Code / Technical\n\`\`\`\n\n\`\`\`\n\n### References\n- \n`
-    const canvasId = `canvas_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const createCanvasDocument = async (title = 'Untitled Canvas', content = '', language = 'markdown') => {
+    if (!activeSessionId) return
     const doc: CanvasDocument = {
-      id: canvasId,
-      chatId: activeTab === 'chats' ? targetId : undefined,
-      projectSessionId: activeTab === 'projects' ? targetId : undefined,
+      id: `canvas_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      projectSessionId: activeSessionId,
       title,
       language,
-      content: starterContent,
+      content,
       version: 1,
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -573,29 +487,13 @@ export function useAppStore() {
     const saved = await window.api.canvases.save(doc)
     setCanvases(prev => [saved, ...prev.filter(c => c.id !== saved.id)])
     setActiveCanvas(saved)
-    return saved
   }
 
   const applyCanvasAiAction = async (action: string, canvas: CanvasDocument) => {
     let promptText = ''
     switch (action) {
-      case 'fix_bugs':
-        promptText = `Please review the code in canvas "${canvas.title}" and fix any bugs, syntax errors, or runtime issues. Use make_canvas to update the canvas.`
-        break
-      case 'add_comments':
-        promptText = `Please add clear, helpful inline comments and docstrings to the code in canvas "${canvas.title}". Use make_canvas to update the canvas.`
-        break
-      case 'add_logs':
-        promptText = `Please add debugging logs/print statements to track execution in canvas "${canvas.title}". Use make_canvas to update the canvas.`
-        break
-      case 'code_review':
-        promptText = `Please perform a thorough code review of canvas "${canvas.title}" and optimize/clean up the implementation. Use make_canvas to update the canvas.`
-        break
-      case 'refactor':
-        promptText = `Please refactor the code in canvas "${canvas.title}" for better structure, readability, and modularity. Use make_canvas to update the canvas.`
-        break
-      case 'polish':
-        promptText = `Please polish the writing in canvas "${canvas.title}" for grammar, flow, and high-impact clarity. Use make_canvas to update the canvas.`
+      case 'fix_grammar':
+        promptText = `Please fix grammar and typos in canvas "${canvas.title}". Use make_canvas to update the canvas.`
         break
       case 'suggest_edits':
         promptText = `Please review and provide editorial improvements for canvas "${canvas.title}". Use make_canvas to update the canvas.`
@@ -616,10 +514,9 @@ export function useAppStore() {
   }
 
   const rollbackToMessage = async (message: Message) => {
-    const targetId = activeTab === 'chats' ? activeChatId : activeSessionId
+    const targetId = activeSessionId
     if (!targetId || !window.api) return
 
-    // Abort active streaming if running
     if (isGenerating) {
       await window.api.agent.abort(targetId)
       setIsGenerating(false)
@@ -628,24 +525,16 @@ export function useAppStore() {
     setActiveApproval(null)
 
     try {
-      // Delete this message and all subsequent messages from history
-      const result = activeTab === 'chats'
-        ? await window.api.chats.rollback({ chatId: targetId, messageId: message.id, deleteTargetMessage: true })
-        : await window.api.projects.rollback({ sessionId: targetId, messageId: message.id, deleteTargetMessage: true })
-
+      const result = await window.api.projects.rollback({ sessionId: targetId, messageId: message.id, deleteTargetMessage: true })
       setMessages(result.remainingMessages)
 
-      // Refresh canvases
-      const updatedCanvases = activeTab === 'chats'
-        ? await window.api.chats.getCanvases(targetId)
-        : await window.api.projects.getCanvases(targetId)
+      const updatedCanvases = await window.api.projects.getCanvases(targetId)
       setCanvases(updatedCanvases)
       setActiveCanvas(curr => {
         if (!curr) return null
         return updatedCanvases.find(c => c.id === curr.id) || null
       })
 
-      // Take the message content directly to the input box
       setPromptDraft(message.content)
     } catch (err) {
       console.error('Failed to rollback message:', err)
@@ -680,10 +569,10 @@ export function useAppStore() {
     isGenerating,
     activeQuestionnaire,
     activeApproval,
-    createNewChat,
-    createChatGroup,
-    toggleGroupCollapse,
-    renameChat,
+    createNewChat: (title?: string) => createProjectSession(title, '__no_project__'),
+    createChatGroup: () => {},
+    toggleGroupCollapse: () => {},
+    renameChat: renameSession,
     renameSession,
     selectProjectFolder,
     createProjectSession,

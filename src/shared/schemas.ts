@@ -21,12 +21,18 @@ export const AppSettingsSchema = z.object({
   defaultShell: z.enum(['powershell', 'cmd', 'bash', 'wsl']).default('powershell'),
   autoApproveTerminal: z.boolean().default(false),
   autoApproveFileWrite: z.boolean().default(false),
+  autoDownloadUpdates: z.boolean().default(false),
   terminalTimeoutMs: z.number().default(60000),
+  terminalWaitUntilComplete: z.boolean().default(true),
+  infiniteLoop: z.boolean().default(true),
+  autoCompactContext: z.boolean().default(true),
+  pruneHistoricalToolOutputs: z.boolean().default(true),
+  customCss: z.string().default(''),
   chatSystemPrompt: z.string().default(
-    'You are AskMeToBuildSomeThing, a friendly AI collaborator. In general chats, you help brainstorm, write markdown canvas notes, and interview the user with questionnaires when you need choices.'
+    'You are AskMeToBuildSomeThing, a friendly AI collaborator. In general chats, you help brainstorm, write markdown canvas notes, customize the app appearance and settings, and interview the user with questionnaires when you need choices.'
   ),
   projectSystemPrompt: z.string().default(
-    'You are AskMeToBuildSomeThing, an autonomous agentic software engineer working on a local codebase. You have tools to read files, create/edit files, run terminal commands, create canvas documents, and ask the user questions when clarification is required. Always think methodically and produce clean, production-grade solutions.'
+    'You are AskMeToBuildSomeThing, an autonomous agentic software engineer working on a local codebase. You have tools to read files, create/edit files, run terminal commands, create canvas documents, customize the app, and ask the user questions when clarification is required. Always think methodically and produce clean, production-grade solutions.'
   )
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
@@ -78,9 +84,19 @@ export type EditFileArgs = z.infer<typeof EditFileArgsSchema>
 
 export const TerminalArgsSchema = z.object({
   command: z.string().min(1, 'Command is required'),
-  cwd: z.string().optional()
+  cwd: z.string().optional(),
+  timeoutMs: z.number().optional().describe('Optional timeout in ms. Set to 0 to wait indefinitely until the command finishes.')
 })
 export type TerminalArgs = z.infer<typeof TerminalArgsSchema>
+
+export const ScheduleTaskArgsSchema = z.object({
+  command: z.string().optional().describe('Shell command to execute when scheduled time triggers (e.g. "ping -c 4 google.com")'),
+  prompt: z.string().optional().describe('Optional instruction or query for the AI when the task fires'),
+  description: z.string().min(1, 'Brief human-readable summary of what this task does'),
+  delaySeconds: z.number().min(1).describe('Number of seconds from now to wait before executing (e.g. 600 for 10 minutes)'),
+  type: z.enum(['command', 'prompt', 'reminder']).default('command')
+})
+export type ScheduleTaskArgs = z.infer<typeof ScheduleTaskArgsSchema>
 
 export const MakeCanvasArgsSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -105,6 +121,12 @@ export const WebSearchArgsSchema = z.object({
 })
 export type WebSearchArgs = z.infer<typeof WebSearchArgsSchema>
 
+export const ReadUrlArgsSchema = z.object({
+  url: z.string().url('Must be a valid HTTP or HTTPS URL'),
+  maxChars: z.number().int().min(500).max(50000).default(15000)
+})
+export type ReadUrlArgs = z.infer<typeof ReadUrlArgsSchema>
+
 export const ListDirArgsSchema = z.object({
   path: z.string().default('.'),
   recursive: z.boolean().default(false),
@@ -125,4 +147,12 @@ export const FindFilesArgsSchema = z.object({
   path: z.string().optional()
 })
 export type FindFilesArgs = z.infer<typeof FindFilesArgsSchema>
+
+export const CustomizeAppArgsSchema = z.object({
+  customCss: z.string().optional().describe('CSS rules to inject into the app at runtime. You can style CSS variables (e.g. :root { --primary: #..., --background: #..., --foreground: #... }), custom fonts, sidebar styles, layout tweaks, or component styles.'),
+  explanation: z.string().describe('Clear, concise explanation of the customizations made to the app.'),
+  chatSystemPrompt: z.string().optional().describe('Optional custom system prompt / personality for the assistant in No Project mode.'),
+  projectSystemPrompt: z.string().optional().describe('Optional custom system prompt / personality for the assistant in Project mode.')
+})
+export type CustomizeAppArgs = z.infer<typeof CustomizeAppArgsSchema>
 

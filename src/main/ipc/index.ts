@@ -7,6 +7,7 @@ import { registerAgentIpc } from './agent.ipc'
 import { registerTerminalIpc } from './terminal.ipc'
 import { registerCanvasesIpc } from './canvases.ipc'
 import { registerUpdaterIpc } from './updater.ipc'
+import { registerSchedulerIpc } from './scheduler.ipc'
 
 export function registerAllIpc(mainWindow: BrowserWindow) {
   registerProvidersIpc()
@@ -17,4 +18,5 @@ export function registerAllIpc(mainWindow: BrowserWindow) {
   registerTerminalIpc(mainWindow)
   registerCanvasesIpc()
   registerUpdaterIpc(mainWindow)
+  registerSchedulerIpc(mainWindow)
 }

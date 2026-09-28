@@ -49,11 +49,40 @@ export type ToolCallRecord = {
     | 'make_canvas'
     | 'ask_user'
     | 'web_search'
+    | 'read_url'
+    | 'customize_app'
+    | 'schedule_task'
     | (string & {})
   args: any
   status: ToolCallStatus
   result?: any
   error?: string
+}
+
+export type ScheduledTask = {
+  id: string
+  targetId: string // chatId or projectSessionId
+  mode: 'chat' | 'project'
+  type: 'command' | 'prompt' | 'reminder'
+  command?: string
+  prompt?: string
+  description: string
+  delaySeconds: number
+  scheduledAt: number
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  result?: string
+  error?: string
+  createdAt: number
+  completedAt?: number
+}
+
+export type ProjectMemory = {
+  id: string
+  projectId: string
+  key: string
+  content: string
+  category: 'architecture' | 'decision' | 'gotcha' | 'preference'
+  updatedAt: number
 }
 
 export type WebSearchResult = {
@@ -66,6 +95,16 @@ export type WebSearchOutput = {
   query: string
   results: WebSearchResult[]
   totalResults: number
+}
+
+export type ReadUrlOutput = {
+  url: string
+  title?: string
+  description?: string
+  content: string
+  truncated: boolean
+  internalLinks?: string[]
+  byteSize: number
 }
 
 
@@ -150,6 +189,7 @@ export type UpdateInfo = {
   assetName: string
   assetSize: number
   htmlUrl: string
+  isOta?: boolean
 }
 
 export type UpdateProgress = {

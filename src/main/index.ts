@@ -65,8 +65,11 @@ function createWindow() {
   }
 }
 
+import { SchedulerManager } from './scheduler/scheduler'
+
 app.whenReady().then(() => {
   initializeDatabase()
+  SchedulerManager.init()
   createWindow()
 
   app.on('activate', () => {

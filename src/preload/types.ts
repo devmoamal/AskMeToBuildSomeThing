@@ -13,7 +13,9 @@ import type {
   ToolApprovalPayload,
   UpdateInfo,
   UpdateProgress,
-  UpdateCheckResult
+  UpdateCheckResult,
+  ScheduledTask,
+  ProjectMemory
 } from '../shared/types'
 
 export interface ElectronAPI {
@@ -69,6 +71,18 @@ export interface ElectronAPI {
   }
   canvases: {
     save: (canvas: { id: string; title: string; content: string; language?: string; chatId?: string; projectSessionId?: string }) => Promise<CanvasDocument>
+  }
+  scheduler: {
+    getAll: (targetId?: string) => Promise<ScheduledTask[]>
+    schedule: (params: { targetId: string; mode: 'chat' | 'project'; type: 'command' | 'prompt' | 'reminder'; command?: string; prompt?: string; description: string; delaySeconds: number; projectFolder?: string }) => Promise<ScheduledTask>
+    cancel: (id: string) => Promise<boolean>
+    delete: (id: string) => Promise<boolean>
+    onTaskCompleted: (callback: (task: ScheduledTask) => void) => () => void
+  }
+  memory: {
+    getProjectMemories: (projectId: string) => Promise<ProjectMemory[]>
+    saveProjectMemory: (memory: ProjectMemory) => Promise<ProjectMemory>
+    deleteProjectMemory: (id: string) => Promise<boolean>
   }
   updater: {
     checkForUpdates: () => Promise<UpdateCheckResult>

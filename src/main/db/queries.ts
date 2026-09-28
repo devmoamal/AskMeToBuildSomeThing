@@ -8,7 +8,9 @@ import {
   projectsTable,
   projectSessionsTable,
   messagesTable,
-  canvasesTable
+  canvasesTable,
+  scheduledTasksTable,
+  projectMemoriesTable
 } from './schema'
 import type {
   ProviderConfig,
@@ -18,7 +20,9 @@ import type {
   Project,
   ProjectSession,
   Message,
-  CanvasDocument
+  CanvasDocument,
+  ScheduledTask,
+  ProjectMemory
 } from '../../shared/types'
 import { AppSettingsSchema } from '../../shared/schemas'
 
@@ -258,13 +262,15 @@ export const dbQueries = {
   async getProjects(): Promise<Project[]> {
     const db = getDb()
     const rows = await db.select().from(projectsTable).orderBy(desc(projectsTable.updatedAt))
-    return rows.map(r => ({
-      id: r.id,
-      name: r.name,
-      folderPath: r.folderPath,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt
-    }))
+    return rows
+      .filter(r => r.id !== '__no_project__' && r.folderPath !== '')
+      .map(r => ({
+        id: r.id,
+        name: r.name,
+        folderPath: r.folderPath,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt
+      }))
   },
 
   async saveProject(project: { id: string; name: string; folderPath: string }): Promise<Project> {
@@ -328,19 +334,17 @@ export const dbQueries = {
         updatedAt: now
       }
     } else {
-      if (!session.projectId) {
-        throw new Error('projectId is required when creating a new session')
-      }
+      const targetProjectId = session.projectId || '__no_project__'
       await db.insert(projectSessionsTable).values({
         id: session.id,
-        projectId: session.projectId,
+        projectId: targetProjectId,
         title: session.title,
         createdAt: now,
         updatedAt: now
       })
       return {
         id: session.id,
-        projectId: session.projectId,
+        projectId: targetProjectId,
         title: session.title,
         createdAt: now,
         updatedAt: now
@@ -533,5 +537,126 @@ export const dbQueries = {
         updatedAt: now
       }
     }
+  },
+
+  // --- Scheduled Tasks ---
+  async getScheduledTasks(targetId?: string): Promise<ScheduledTask[]> {
+    const db = getDb()
+    const query = targetId
+      ? db.select().from(scheduledTasksTable).where(eq(scheduledTasksTable.targetId, targetId)).orderBy(desc(scheduledTasksTable.createdAt))
+      : db.select().from(scheduledTasksTable).orderBy(desc(scheduledTasksTable.createdAt))
+    const rows = await query
+    return rows.map(r => ({
+      id: r.id,
+      targetId: r.targetId,
+      mode: r.mode as 'chat' | 'project',
+      type: r.type as 'command' | 'prompt' | 'reminder',
+      command: r.command || undefined,
+      prompt: r.prompt || undefined,
+      description: r.description,
+      delaySeconds: r.delaySeconds,
+      scheduledAt: r.scheduledAt,
+      status: r.status as any,
+      result: r.result || undefined,
+      error: r.error || undefined,
+      createdAt: r.createdAt,
+      completedAt: r.completedAt || undefined
+    }))
+  },
+
+  async saveScheduledTask(task: ScheduledTask): Promise<ScheduledTask> {
+    const db = getDb()
+    const existing = await db.select().from(scheduledTasksTable).where(eq(scheduledTasksTable.id, task.id))
+    if (existing[0]) {
+      await db.update(scheduledTasksTable)
+        .set({
+          status: task.status,
+          result: task.result || null,
+          error: task.error || null,
+          completedAt: task.completedAt || null
+        })
+        .where(eq(scheduledTasksTable.id, task.id))
+    } else {
+      await db.insert(scheduledTasksTable).values({
+        id: task.id,
+        targetId: task.targetId,
+        mode: task.mode,
+        type: task.type,
+        command: task.command || null,
+        prompt: task.prompt || null,
+        description: task.description,
+        delaySeconds: task.delaySeconds,
+        scheduledAt: task.scheduledAt,
+        status: task.status,
+        result: task.result || null,
+        error: task.error || null,
+        createdAt: task.createdAt,
+        completedAt: task.completedAt || null
+      })
+    }
+    return task
+  },
+
+  async updateScheduledTask(id: string, updates: Partial<ScheduledTask>): Promise<void> {
+    const db = getDb()
+    await db.update(scheduledTasksTable)
+      .set({
+        status: updates.status,
+        result: updates.result || null,
+        error: updates.error || null,
+        completedAt: updates.completedAt || null
+      })
+      .where(eq(scheduledTasksTable.id, id))
+  },
+
+  async deleteScheduledTask(id: string): Promise<void> {
+    const db = getDb()
+    await db.delete(scheduledTasksTable).where(eq(scheduledTasksTable.id, id))
+  },
+
+  // --- Project Memories ---
+  async getProjectMemories(projectId: string): Promise<ProjectMemory[]> {
+    const db = getDb()
+    const rows = await db.select().from(projectMemoriesTable)
+      .where(eq(projectMemoriesTable.projectId, projectId))
+      .orderBy(desc(projectMemoriesTable.updatedAt))
+    return rows.map(r => ({
+      id: r.id,
+      projectId: r.projectId,
+      key: r.key,
+      content: r.content,
+      category: r.category as any,
+      updatedAt: r.updatedAt
+    }))
+  },
+
+  async saveProjectMemory(memory: ProjectMemory): Promise<ProjectMemory> {
+    const db = getDb()
+    const existing = await db.select().from(projectMemoriesTable).where(eq(projectMemoriesTable.id, memory.id))
+    if (existing[0]) {
+      await db.update(projectMemoriesTable)
+        .set({
+          key: memory.key,
+          content: memory.content,
+          category: memory.category,
+          updatedAt: memory.updatedAt || Date.now()
+        })
+        .where(eq(projectMemoriesTable.id, memory.id))
+    } else {
+      await db.insert(projectMemoriesTable).values({
+        id: memory.id,
+        projectId: memory.projectId,
+        key: memory.key,
+        content: memory.content,
+        category: memory.category,
+        updatedAt: memory.updatedAt || Date.now()
+      })
+    }
+    return memory
+  },
+
+  async deleteProjectMemory(id: string): Promise<void> {
+    const db = getDb()
+    await db.delete(projectMemoriesTable).where(eq(projectMemoriesTable.id, id))
   }
 }

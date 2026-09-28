@@ -72,3 +72,29 @@ export const canvasesTable = sqliteTable('canvases', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()
 })
+
+export const scheduledTasksTable = sqliteTable('scheduled_tasks', {
+  id: text('id').primaryKey(),
+  targetId: text('target_id').notNull(),
+  mode: text('mode').notNull().default('chat'), // 'chat' | 'project'
+  type: text('type').notNull().default('command'), // 'command' | 'prompt' | 'reminder'
+  command: text('command'),
+  prompt: text('prompt'),
+  description: text('description').notNull(),
+  delaySeconds: integer('delay_seconds').notNull().default(0),
+  scheduledAt: integer('scheduled_at').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  result: text('result'),
+  error: text('error'),
+  createdAt: integer('created_at').notNull(),
+  completedAt: integer('completed_at')
+})
+
+export const projectMemoriesTable = sqliteTable('project_memories', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull(),
+  key: text('key').notNull(),
+  content: text('content').notNull(),
+  category: text('category').notNull().default('architecture'),
+  updatedAt: integer('updated_at').notNull()
+})

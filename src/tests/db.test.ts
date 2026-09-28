@@ -188,4 +188,46 @@ describe('Database Queries and Schema', () => {
     expect(rb2.deletedMessageIds).toEqual(['msg_3'])
     expect(rb2.remainingMessages.map(m => m.id)).toEqual(['msg_1', 'msg_2'])
   })
+
+  it('should support customCss runtime styling and settings updates', async () => {
+    const initial = await dbQueries.getSettings()
+    expect(initial.customCss).toBe('')
+
+    const updated = await dbQueries.saveSettings({
+      customCss: ':root { --primary: #00ffcc; } .sidebar-drawer { background: #050505; }'
+    })
+    expect(updated.customCss).toContain('--primary: #00ffcc')
+
+    const reloaded = await dbQueries.getSettings()
+    expect(reloaded.customCss).toContain('.sidebar-drawer')
+  })
+
+  it('should save sessions under No Project without requiring a local folder', async () => {
+    const session = await dbQueries.saveProjectSession({
+      id: 'sess_general_1',
+      projectId: '__no_project__',
+      title: 'General Brainstorming Chat'
+    })
+
+    expect(session.id).toBe('sess_general_1')
+    expect(session.projectId).toBe('__no_project__')
+
+    const sessions = await dbQueries.getProjectSessions('__no_project__')
+    expect(sessions.length).toBe(1)
+    expect(sessions[0].title).toBe('General Brainstorming Chat')
+
+    // Message inside No Project session
+    await dbQueries.saveMessage({
+      id: 'msg_no_proj_1',
+      projectSessionId: 'sess_general_1',
+      role: 'user',
+      content: 'Can you customize the app to be cyberpunk?',
+      createdAt: Date.now()
+    })
+
+    const messages = await dbQueries.getMessages('sess_general_1', true)
+    expect(messages.length).toBe(1)
+    expect(messages[0].content).toBe('Can you customize the app to be cyberpunk?')
+  })
 })
+

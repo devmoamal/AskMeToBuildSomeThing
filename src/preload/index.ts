@@ -75,6 +75,24 @@ const api: ElectronAPI = {
   canvases: {
     save: (canvas) => ipcRenderer.invoke('canvases:save', canvas)
   },
+  scheduler: {
+    getAll: (targetId?: string) => ipcRenderer.invoke('scheduler:getAll', targetId),
+    schedule: (params: any) => ipcRenderer.invoke('scheduler:schedule', params),
+    cancel: (id: string) => ipcRenderer.invoke('scheduler:cancel', id),
+    delete: (id: string) => ipcRenderer.invoke('scheduler:delete', id),
+    onTaskCompleted: (callback: any) => {
+      const listener = (_: any, task: any) => callback(task)
+      ipcRenderer.on('scheduler:task_completed', listener)
+      return () => {
+        ipcRenderer.removeListener('scheduler:task_completed', listener)
+      }
+    }
+  },
+  memory: {
+    getProjectMemories: (projectId: string) => ipcRenderer.invoke('memory:getProjectMemories', projectId),
+    saveProjectMemory: (memory: any) => ipcRenderer.invoke('memory:saveProjectMemory', memory),
+    deleteProjectMemory: (id: string) => ipcRenderer.invoke('memory:deleteProjectMemory', id)
+  },
   updater: {
     checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
     downloadUpdate: (downloadUrl: string, assetName: string) =>

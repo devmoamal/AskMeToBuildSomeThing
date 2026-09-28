@@ -7,6 +7,7 @@ import { FileReadActionCard } from './FileReadActionCard'
 import { CanvasCard } from './CanvasCard'
 import { QuestionnaireCard } from './QuestionnaireCard'
 import { WebSearchActionCard } from './WebSearchActionCard'
+import { ReadUrlActionCard } from './ReadUrlActionCard'
 import { ExplorationActionCard } from './ExplorationActionCard'
 import { VercelBadge } from '../../ui/VercelIcon'
 
@@ -33,6 +34,7 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
     tc.toolName === 'edit_file' ||
     tc.toolName === 'read_file' ||
     tc.toolName === 'web_search' ||
+    tc.toolName === 'read_url' ||
     tc.toolName === 'list_dir' ||
     tc.toolName === 'find_files' ||
     tc.toolName === 'search_code'
@@ -64,6 +66,7 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   const editCount = actionSteps.filter(tc => tc.toolName === 'edit_file').length
   const cmdCount = actionSteps.filter(tc => tc.toolName === 'use_terminal').length
   const searchCount = actionSteps.filter(tc => tc.toolName === 'web_search').length
+  const crawlCount = actionSteps.filter(tc => tc.toolName === 'read_url').length
   const exploreCount = actionSteps.filter(tc => tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code').length
 
   const summaryParts = []
@@ -73,6 +76,7 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   if (editCount > 0) summaryParts.push(`${editCount} edit`)
   if (cmdCount > 0) summaryParts.push(`${cmdCount} cmd${cmdCount !== 1 ? 's' : ''}`)
   if (searchCount > 0) summaryParts.push(`${searchCount} search${searchCount !== 1 ? 'es' : ''}`)
+  if (crawlCount > 0) summaryParts.push(`${crawlCount} crawl${crawlCount !== 1 ? 's' : ''}`)
 
   return (
     <div className="space-y-1.5 select-text my-1.5">
@@ -136,6 +140,9 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
                 }
                 if (tc.toolName === 'web_search') {
                   return <WebSearchActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'read_url') {
+                  return <ReadUrlActionCard key={tc.id} toolCall={tc} />
                 }
                 if (tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code') {
                   return <ExplorationActionCard key={tc.id} toolCall={tc} />

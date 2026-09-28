@@ -4,12 +4,19 @@ import { AppSidebar } from './components/sidebar/AppSidebar'
 import { ChatView } from './components/chat/ChatView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { OnboardingModal } from './components/onboarding/OnboardingModal'
-import { Sparkles, X } from 'lucide-react'
-import type { UpdateInfo } from '../shared/types'
+import { Sparkles, X, Download, RefreshCw, AlertCircle, ArrowUpCircle } from 'lucide-react'
+import type { UpdateInfo, UpdateProgress } from '../shared/types'
 
 export const App: React.FC = () => {
   const store = useAppStore()
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null)
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    'providers' | 'memory' | 'scheduler' | 'safety' | 'shell' | 'prompts' | 'appearance' | 'data' | 'updates'
+  >('providers')
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [updatePhase, setUpdatePhase] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle')
+  const [downloadProgress, setDownloadProgress] = useState<UpdateProgress | null>(null)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!window.api?.updater) return
@@ -18,6 +25,47 @@ export const App: React.FC = () => {
     })
     return unbind
   }, [])
+
+  useEffect(() => {
+    if (!window.api?.updater) return
+    const unbind = window.api.updater.onProgress((p) => {
+      setDownloadProgress(p)
+    })
+    return unbind
+  }, [])
+
+  const handleOneClickUpdate = async () => {
+    if (!availableUpdate) return
+    setIsUpdating(true)
+    setUpdatePhase('downloading')
+    setUpdateError(null)
+    try {
+      const dlRes = await window.api.updater.downloadUpdate(
+        availableUpdate.downloadUrl,
+        availableUpdate.assetName
+      )
+      if (!dlRes.success || !dlRes.filePath) {
+        throw new Error(dlRes.error || 'Failed to download update package')
+      }
+
+      setUpdatePhase('installing')
+      const instRes = await window.api.updater.installUpdate(dlRes.filePath)
+      if (!instRes.success) {
+        throw new Error(instRes.error || 'Failed to install update')
+      }
+    } catch (err: any) {
+      setUpdateError(err.message || 'Update failed')
+      setUpdatePhase('error')
+      setIsUpdating(false)
+    }
+  }
+
+  // Auto-download update in background if user enabled setting
+  useEffect(() => {
+    if (availableUpdate && store.settings?.autoDownloadUpdates && updatePhase === 'idle' && !isUpdating) {
+      handleOneClickUpdate()
+    }
+  }, [availableUpdate, store.settings?.autoDownloadUpdates])
 
   // Apply theme class to documentElement
   useEffect(() => {
@@ -76,44 +124,26 @@ export const App: React.FC = () => {
   }, [store])
 
   // Main application view with ChatGPT-style Dual-Pane Canvas workspace
-  const activeChat = store.chats.find(c => c.id === store.activeChatId)
-  const activeProject = store.projects.find(p => p.id === store.activeProjectId)
+  const isNoProject = !store.activeProjectId || store.activeProjectId === '__no_project__'
+  const activeProject = isNoProject ? null : store.projects.find(p => p.id === store.activeProjectId)
   const activeSession = store.projectSessions.find(s => s.id === store.activeSessionId)
 
-  const viewTitle = store.activeTab === 'chats'
-    ? (activeChat?.title || 'New Chat')
+  const viewTitle = isNoProject
+    ? (activeSession?.title || 'New Chat')
     : (`${activeProject?.name || 'Project'}${activeSession ? ` - ${activeSession.title}` : ' - New Chat'}`)
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
-      {/* Sidebar with slide tabs (auto-collapsed when Canvas is open to maximize workspace) */}
+      {/* Dynamic Production Runtime CSS Injected via Prompts / customize_app tool */}
+      {store.settings?.customCss && (
+        <style id="production-runtime-custom-css">
+          {store.settings.customCss}
+        </style>
+      )}
+
+      {/* Sidebar with Unified Projects (auto-collapsed when Canvas is open to maximize workspace) */}
       <AppSidebar
         isOpen={isSidebarEffectivelyOpen}
-        activeTab={store.activeTab}
-        setActiveTab={store.setActiveTab}
-        chats={store.chats}
-        chatGroups={store.chatGroups}
-        activeChatId={store.activeChatId}
-        onSelectChat={store.setActiveChatId}
-        onNewChat={store.createNewChat}
-        onNewGroup={store.createChatGroup}
-        onToggleGroupCollapse={store.toggleGroupCollapse}
-        onRenameChat={store.renameChat}
-        onDeleteGroup={async (id) => {
-          await window.api.chats.deleteGroup(id)
-          store.refreshState()
-        }}
-        onDeleteChat={async (id) => {
-          await window.api.chats.delete(id)
-          store.refreshState()
-        }}
-        onMoveChatToGroup={async (chatId, groupId) => {
-          const c = store.chats.find(x => x.id === chatId)
-          if (c) {
-            await window.api.chats.save({ id: c.id, title: c.title, groupId })
-            store.refreshState()
-          }
-        }}
         projects={store.projects}
         activeProjectId={store.activeProjectId}
         projectSessions={store.projectSessions}
@@ -132,25 +162,26 @@ export const App: React.FC = () => {
           store.refreshState()
         }}
         providers={store.providers}
-        onOpenSettings={() => store.setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsInitialTab('providers')
+          store.setIsSettingsOpen(true)
+        }}
         onCloseSidebar={toggleSidebar}
       />
 
       {/* Main Chat / Project Workspace */}
       <main className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
         <ChatView
-          mode={store.activeTab === 'chats' ? 'chat' : 'project'}
+          mode={isNoProject ? 'chat' : 'project'}
           title={viewTitle}
-          rawTitle={store.activeTab === 'chats' ? activeChat?.title : activeSession?.title}
-          targetId={store.activeTab === 'chats' ? store.activeChatId : store.activeSessionId}
+          rawTitle={activeSession?.title}
+          targetId={store.activeSessionId}
           onRenameCurrent={(newTitle) => {
-            if (store.activeTab === 'chats' && store.activeChatId) {
-              store.renameChat(store.activeChatId, newTitle)
-            } else if (store.activeTab === 'projects' && store.activeSessionId) {
+            if (store.activeSessionId) {
               store.renameSession(store.activeSessionId, newTitle)
             }
           }}
-          folderPath={store.activeTab === 'projects' ? activeProject?.folderPath : undefined}
+          folderPath={!isNoProject ? activeProject?.folderPath : undefined}
           messages={store.messages}
           canvases={store.canvases}
           activeCanvas={store.activeCanvas}
@@ -188,6 +219,7 @@ export const App: React.FC = () => {
         onClose={() => store.setIsSettingsOpen(false)}
         providers={store.providers}
         settings={store.settings}
+        initialTab={settingsInitialTab}
         onSaveProvider={async (p) => {
           await window.api.providers.save(p)
           store.refreshState()
@@ -213,34 +245,134 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Background Update Notification Toast */}
+      {/* Background Update Notification Toast / In-Place Updater */}
       {availableUpdate && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 p-3 rounded-lg border border-primary/40 bg-card/95 backdrop-blur shadow-2xl text-xs text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="p-2 rounded-md bg-primary/10 text-primary">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-semibold text-xs text-foreground">Update Available: v{availableUpdate.version}</div>
-            <div className="text-[11px] text-muted-foreground">A new version is available on GitHub.</div>
-          </div>
-          <div className="flex items-center gap-1.5 ml-2">
-            <button
-              onClick={() => {
-                store.setIsSettingsOpen(true)
-                setAvailableUpdate(null)
-              }}
-              className="px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground font-medium text-xs hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              View Update
-            </button>
-            <button
-              onClick={() => setAvailableUpdate(null)}
-              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground transition-colors cursor-pointer"
-              title="Dismiss"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
+        <div className="fixed bottom-4 right-4 z-50 min-w-[320px] max-w-[420px] p-3.5 rounded-xl border border-primary/40 bg-card/95 backdrop-blur-md shadow-2xl text-xs text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {updatePhase === 'idle' && (
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                  Update Available
+                  <span className="px-1.5 py-0.2 rounded bg-primary/15 text-primary text-[10px] font-mono">
+                    v{availableUpdate.version}
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                  {availableUpdate.releaseName || 'A new version is available on GitHub.'}
+                </div>
+                <div className="flex items-center gap-2 mt-2.5">
+                  <button
+                    onClick={handleOneClickUpdate}
+                    className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium text-xs hover:bg-primary/90 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ArrowUpCircle className="w-3.5 h-3.5" />
+                    Update & Restart
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSettingsInitialTab('updates')
+                      store.setIsSettingsOpen(true)
+                    }}
+                    className="px-2.5 py-1.5 rounded-md bg-secondary/80 hover:bg-secondary text-secondary-foreground text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Notes
+                  </button>
+                  <button
+                    onClick={() => setAvailableUpdate(null)}
+                    className="p-1.5 rounded-md hover:bg-muted text-muted-foreground transition-colors cursor-pointer ml-auto"
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {updatePhase === 'downloading' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <Download className="w-3.5 h-3.5 text-primary animate-bounce" />
+                  <span>Downloading v{availableUpdate.version}...</span>
+                </div>
+                <span className="font-mono text-[11px] text-primary font-semibold">
+                  {downloadProgress?.percent || 0}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-150"
+                  style={{ width: `${downloadProgress?.percent || 0}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>
+                  {downloadProgress?.transferred
+                    ? `${(downloadProgress.transferred / (1024 * 1024)).toFixed(1)} MB / ${(downloadProgress.total / (1024 * 1024)).toFixed(1)} MB`
+                    : 'Connecting...'}
+                </span>
+                {downloadProgress?.bytesPerSecond ? (
+                  <span className="font-mono">
+                    {(downloadProgress.bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {updatePhase === 'installing' && (
+            <div className="flex items-center gap-3 py-1">
+              <RefreshCw className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
+              <div>
+                <div className="font-semibold text-xs text-foreground">Installing & Restarting...</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  Replacing application bundle and reopening AskMeToBuildSomeThing...
+                </div>
+              </div>
+            </div>
+          )}
+
+          {updatePhase === 'error' && (
+            <div className="space-y-2">
+              <div className="flex items-start gap-2.5 text-destructive">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-xs">Update Failed</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{updateError}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 justify-end pt-1">
+                <button
+                  onClick={handleOneClickUpdate}
+                  className="px-2.5 py-1 rounded bg-primary text-primary-foreground text-xs font-medium cursor-pointer"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => {
+                    setSettingsInitialTab('updates')
+                    store.setIsSettingsOpen(true)
+                  }}
+                  className="px-2 py-1 rounded bg-secondary text-secondary-foreground text-xs cursor-pointer"
+                >
+                  Settings
+                </button>
+                <button
+                  onClick={() => {
+                    setAvailableUpdate(null)
+                    setUpdatePhase('idle')
+                  }}
+                  className="px-2 py-1 rounded hover:bg-muted text-muted-foreground text-xs cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

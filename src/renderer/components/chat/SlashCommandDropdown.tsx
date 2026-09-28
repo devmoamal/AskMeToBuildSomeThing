@@ -1,5 +1,17 @@
 import React from 'react'
-import { FileCode, HelpCircle, ListTodo, Globe } from 'lucide-react'
+import {
+  FileCode,
+  HelpCircle,
+  ListTodo,
+  Globe,
+  Sparkles,
+  FileText,
+  Clock,
+  Code,
+  TestTube,
+  GitBranch,
+  Sliders
+} from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 export interface SlashCommandItem {
@@ -11,16 +23,46 @@ export interface SlashCommandItem {
 
 export const SLASH_COMMANDS: SlashCommandItem[] = [
   {
-    command: '/canvas',
-    label: '/canvas',
-    description: 'Create an editable in-chat Typeset markdown canvas document',
-    icon: FileCode
+    command: '/compact',
+    label: '/compact',
+    description: 'Compress context history, prune old tool outputs & save tokens',
+    icon: Sparkles
   },
   {
-    command: '/search',
-    label: '/search',
-    description: 'Search the live web with DuckDuckGo for documentation, facts, or news',
-    icon: Globe
+    command: '/summary',
+    label: '/summary',
+    description: 'Generate full executive changelog and summary of all work done',
+    icon: FileText
+  },
+  {
+    command: '/extend',
+    label: '/extend',
+    description: 'Analyze codebase and suggest next feature extensions to build',
+    icon: GitBranch
+  },
+  {
+    command: '/schedule',
+    label: '/schedule',
+    description: 'Schedule a deferred command or reminder to run in the background',
+    icon: Clock
+  },
+  {
+    command: '/plan',
+    label: '/plan',
+    description: 'Draft a structured architectural implementation plan',
+    icon: ListTodo
+  },
+  {
+    command: '/review',
+    label: '/review',
+    description: 'Perform rigorous code review and diff inspection',
+    icon: Code
+  },
+  {
+    command: '/test',
+    label: '/test',
+    description: 'Run project tests and auto-fix any failing assertions',
+    icon: TestTube
   },
   {
     command: '/grill-me',
@@ -29,10 +71,22 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
     icon: HelpCircle
   },
   {
-    command: '/plan',
-    label: '/plan',
-    description: 'Draft a structured architectural implementation plan',
-    icon: ListTodo
+    command: '/canvas',
+    label: '/canvas',
+    description: 'Create an editable in-chat Typeset markdown canvas document',
+    icon: FileCode
+  },
+  {
+    command: '/search',
+    label: '/search',
+    description: 'Search the live web with DuckDuckGo for documentation or facts',
+    icon: Globe
+  },
+  {
+    command: '/skills',
+    label: '/skills',
+    description: 'Inspect and configure specialized agent skills and behaviors',
+    icon: Sliders
   }
 ]
 

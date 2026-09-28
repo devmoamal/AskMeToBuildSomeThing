@@ -128,6 +128,35 @@ export function initializeDatabase(customPath?: string) {
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
       FOREIGN KEY (project_session_id) REFERENCES project_sessions(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      target_id TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'chat',
+      type TEXT NOT NULL DEFAULT 'command',
+      command TEXT,
+      prompt TEXT,
+      description TEXT NOT NULL,
+      delay_seconds INTEGER NOT NULL DEFAULT 0,
+      scheduled_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      result TEXT,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS project_memories (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      content TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'architecture',
+      updated_at INTEGER NOT NULL
+    );
+
+    INSERT OR IGNORE INTO projects (id, name, folder_path, created_at, updated_at)
+    VALUES ('__no_project__', 'No Project', '', 0, 0);
   `)
 
   // Migration check: ensure messages table has correct snake_case columns & parts

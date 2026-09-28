@@ -4,7 +4,14 @@ import fs from 'node:fs'
 import { spawn, execSync } from 'node:child_process'
 import type { UpdateCheckResult, UpdateInfo, UpdateProgress } from '../../shared/types'
 import { isNewerVersion } from '../../shared/semver'
-import { findMatchingAsset } from '../../shared/updater-utils'
+import {
+  findMatchingAsset,
+  findOtaAsset,
+  resolveTargetAppPath,
+  generateMacUpdateScript,
+  generateWinUpdateScript,
+  generateLinuxUpdateScript
+} from '../../shared/updater-utils'
 
 const GITHUB_REPO = 'devmoamal/AskMeToBuildSomeThing'
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
@@ -31,7 +38,9 @@ export async function fetchLatestRelease(): Promise<UpdateCheckResult> {
     const remoteTag = release.tag_name || ''
     const available = isNewerVersion(remoteTag, currentVersion)
 
-    const matchingAsset = findMatchingAsset(release.assets || [])
+    const otaAsset = findOtaAsset(release.assets || [])
+    const matchingAsset = otaAsset || findMatchingAsset(release.assets || [])
+    const isOta = Boolean(otaAsset && matchingAsset === otaAsset)
 
     const updateInfo: UpdateInfo = {
       version: remoteTag.replace(/^v/, ''),
@@ -41,7 +50,8 @@ export async function fetchLatestRelease(): Promise<UpdateCheckResult> {
       downloadUrl: matchingAsset?.browser_download_url || release.html_url || '',
       assetName: matchingAsset?.name || `AskMeToBuildSomeThing-${remoteTag}-${process.platform}.${process.platform === 'win32' ? 'exe' : 'dmg'}`,
       assetSize: matchingAsset?.size || 0,
-      htmlUrl: release.html_url || `https://github.com/${GITHUB_REPO}/releases`
+      htmlUrl: release.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+      isOta
     }
 
     return {
@@ -147,15 +157,14 @@ export function registerUpdaterIpc(mainWindow: BrowserWindow) {
     }
   )
 
-  function getCurrentAppBundlePath(): string {
+  function isPathWritable(targetPath: string): boolean {
     try {
-      const exePath = app.getPath('exe')
-      const match = exePath.match(/^(.*?\.app)\/Contents\/MacOS\//)
-      if (match && match[1]) {
-        return match[1]
-      }
-    } catch {}
-    return '/Applications/AskMeToBuildSomeThing.app'
+      const checkPath = fs.existsSync(targetPath) ? targetPath : path.dirname(targetPath)
+      fs.accessSync(checkPath, fs.constants.W_OK)
+      return true
+    } catch {
+      return false
+    }
   }
 
   ipcMain.handle(
@@ -167,28 +176,53 @@ export function registerUpdaterIpc(mainWindow: BrowserWindow) {
         }
 
         const platform = process.platform
+        const tempDir = app.getPath('temp')
+
+        // Live Over-The-Air (OTA) update: hot reload without quitting or replacing binary
+        const fileName = path.basename(filePath).toLowerCase()
+        const isOta = fileName.includes('bundle') || fileName.includes('ota') || fileName.endsWith('dist.zip')
+        if (isOta && filePath.endsWith('.zip')) {
+          const liveBundleDir = path.join(app.getPath('userData'), 'live_bundle')
+          fs.mkdirSync(liveBundleDir, { recursive: true })
+          if (platform === 'win32') {
+            execSync(`powershell -command "Expand-Archive -Path '${filePath}' -DestinationPath '${liveBundleDir}' -Force"`)
+          } else {
+            execSync(`ditto -xk "${filePath}" "${liveBundleDir}"`)
+          }
+          setTimeout(() => {
+            mainWindow.reload()
+          }, 600)
+          return { success: true, message: 'Live OTA update applied! Refreshing interface...' }
+        }
 
         if (platform === 'win32') {
-          // Launch Windows NSIS installer silently (/S) and exit app
-          const child = spawn(filePath, ['/S'], {
+          const exePath = app.getPath('exe')
+          const scriptPath = path.join(tempDir, `apply-update-${Date.now()}.bat`)
+          const scriptContent = generateWinUpdateScript({
+            pid: process.pid,
+            installerPath: filePath,
+            exePath
+          })
+          fs.writeFileSync(scriptPath, scriptContent, 'utf-8')
+
+          const child = spawn('cmd.exe', ['/c', scriptPath], {
             detached: true,
             stdio: 'ignore'
           })
           child.unref()
-          setTimeout(() => app.exit(0), 500)
+          setTimeout(() => app.exit(0), 400)
           return { success: true, message: 'Installing update silently and restarting...' }
         }
 
         if (platform === 'darwin') {
-          const targetAppPath = getCurrentAppBundlePath()
-          const tempDir = app.getPath('temp')
+          const targetAppPath = resolveTargetAppPath(app.getPath('exe'), 'darwin')
           const stagingDir = path.join(tempDir, `update-app-${Date.now()}`)
           fs.mkdirSync(stagingDir, { recursive: true })
 
           let extractedAppPath = ''
 
           if (filePath.endsWith('.zip')) {
-            // Unpack directly via ditto preserving codesign signatures and permissions
+            // Unpack directly via ditto preserving codesign signatures, symlinks, and permissions
             execSync(`ditto -xk "${filePath}" "${stagingDir}"`)
             const items = fs.readdirSync(stagingDir)
             const appFolder = items.find(i => i.endsWith('.app'))
@@ -200,66 +234,57 @@ export function registerUpdaterIpc(mainWindow: BrowserWindow) {
             // Mount DMG silently without opening Finder
             const mountPoint = path.join(tempDir, `update-mount-${Date.now()}`)
             fs.mkdirSync(mountPoint, { recursive: true })
-            execSync(`hdiutil attach "${filePath}" -nobrowse -mountpoint "${mountPoint}" -quiet`)
             try {
+              execSync(`hdiutil attach "${filePath}" -nobrowse -mountpoint "${mountPoint}" -quiet`)
               const items = fs.readdirSync(mountPoint)
               const appFolder = items.find(i => i.endsWith('.app'))
               if (!appFolder) {
                 throw new Error('No .app bundle found inside downloaded DMG')
               }
               extractedAppPath = path.join(stagingDir, appFolder)
-              execSync(`cp -R "${path.join(mountPoint, appFolder)}" "${extractedAppPath}"`)
+              execSync(`ditto "${path.join(mountPoint, appFolder)}" "${extractedAppPath}"`)
             } finally {
               try {
                 execSync(`hdiutil detach "${mountPoint}" -quiet -force`)
+              } catch {}
+              try {
+                fs.rmdirSync(mountPoint)
               } catch {}
             }
           } else {
             throw new Error('Unsupported macOS update package: ' + filePath)
           }
 
-          // Create detached shell script to swap app bundle, strip quarantine, and relaunch
+          // Verify the extracted bundle has an executable
+          const macosFolder = path.join(extractedAppPath, 'Contents', 'MacOS')
+          if (!fs.existsSync(macosFolder)) {
+            throw new Error('Downloaded update bundle is invalid (missing Contents/MacOS)')
+          }
+
+          // Generate robust shell script that atomically replaces app bundle and relaunches
           const scriptPath = path.join(tempDir, `apply-update-${Date.now()}.sh`)
-          const scriptContent = `#!/bin/bash
-PID=$1
-NEW_APP="$2"
-TARGET_APP="$3"
-
-COUNT=0
-while kill -0 $PID 2>/dev/null; do
-  sleep 0.1
-  COUNT=$((COUNT+1))
-  if [ $COUNT -ge 100 ]; then
-    kill -9 $PID 2>/dev/null
-    break
-  fi
-done
-
-# Atomically replace target application
-rm -rf "$TARGET_APP"
-cp -R "$NEW_APP" "$TARGET_APP"
-
-# Strip quarantine attribute to avoid Gatekeeper launch delays/bouncing
-xattr -cr "$TARGET_APP" 2>/dev/null || true
-
-# Clean up temporary files
-rm -rf "$NEW_APP"
-
-# Launch updated application
-open -n "$TARGET_APP"
-`
+          const scriptContent = generateMacUpdateScript({
+            pid: process.pid,
+            newAppPath: extractedAppPath,
+            targetAppPath
+          })
           fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
 
-          const child = spawn('/bin/bash', [
-            scriptPath,
-            String(process.pid),
-            extractedAppPath,
-            targetAppPath
-          ], {
-            detached: true,
-            stdio: 'ignore'
-          })
-          child.unref()
+          // If target is writable by current user, launch directly; otherwise request admin elevation
+          if (isPathWritable(targetAppPath)) {
+            const child = spawn('/bin/bash', [scriptPath], {
+              detached: true,
+              stdio: 'ignore'
+            })
+            child.unref()
+          } else {
+            const appleScript = `do shell script "/bin/bash '${scriptPath}'" with administrator privileges`
+            const child = spawn('osascript', ['-e', appleScript], {
+              detached: true,
+              stdio: 'ignore'
+            })
+            child.unref()
+          }
 
           setTimeout(() => {
             app.exit(0)
@@ -270,11 +295,20 @@ open -n "$TARGET_APP"
 
         if (platform === 'linux') {
           if (filePath.endsWith('.AppImage')) {
-            fs.chmodSync(filePath, 0o755)
-            const child = spawn(filePath, [], { detached: true, stdio: 'ignore' })
+            const scriptPath = path.join(tempDir, `apply-update-${Date.now()}.sh`)
+            const scriptContent = generateLinuxUpdateScript({
+              pid: process.pid,
+              newAppPath: filePath,
+              targetAppPath: process.env.APPIMAGE
+            })
+            fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
+            const child = spawn('/bin/bash', [scriptPath], {
+              detached: true,
+              stdio: 'ignore'
+            })
             child.unref()
-            setTimeout(() => app.quit(), 500)
-            return { success: true, message: 'Launching new AppImage...' }
+            setTimeout(() => app.exit(0), 400)
+            return { success: true, message: 'Updating and restarting AppImage...' }
           }
           await shell.openPath(filePath)
           return { success: true, message: 'Package opened.' }

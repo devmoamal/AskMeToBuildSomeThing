@@ -42,6 +42,10 @@ export const terminalTool: AgentTool<TerminalArgs> = {
       cwd: {
         type: 'string',
         description: 'Optional sub-directory relative to the project root to run the command in'
+      },
+      timeoutMs: {
+        type: 'number',
+        description: 'Optional execution timeout in ms. Set to 0 to wait indefinitely until the command exits completely.'
       }
     },
     required: ['command']
@@ -65,11 +69,15 @@ export const terminalTool: AgentTool<TerminalArgs> = {
       }
     }
 
+    const resolvedTimeout = args.timeoutMs !== undefined
+      ? args.timeoutMs
+      : (ctx.settings.terminalWaitUntilComplete ? 0 : ctx.settings.terminalTimeoutMs)
+
     const result = await TerminalRunner.run({
       command: args.command,
       cwd: workingDir,
       shell: ctx.settings.defaultShell,
-      timeoutMs: ctx.settings.terminalTimeoutMs,
+      timeoutMs: resolvedTimeout,
       onOutput: (chunk) => {
         if (ctx.onStream) {
           ctx.onStream(chunk)
