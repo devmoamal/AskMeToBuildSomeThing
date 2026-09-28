@@ -37,17 +37,38 @@ export function useAppStore() {
   const [draftChatGroupId, setDraftChatGroupId] = useState<string | null>(null)
   const [promptDraft, setPromptDraft] = useState<string | null>(null)
 
-  const [isGenerating, setIsGenerating] = useState(false)
+  const [generatingSessionIds, setGeneratingSessionIds] = useState<Set<string>>(new Set())
+  const generatingSessionIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    generatingSessionIdsRef.current = generatingSessionIds
+  }, [generatingSessionIds])
+
   const [selectedModels, setSelectedModels] = useState<Record<string, { providerId: string; model: string }>>({})
-  const [activeQuestionnaire, setActiveQuestionnaire] = useState<{
+  const [activeQuestionnaires, setActiveQuestionnaires] = useState<Record<string, {
     toolCallId: string
     payload: QuestionnairePayload
-  } | null>(null)
-  const [activeApproval, setActiveApproval] = useState<{
+  }>>({})
+  const [activeApprovals, setActiveApprovals] = useState<Record<string, {
     toolCallId: string
     toolName: string
     args: any
-  } | null>(null)
+  }>>({})
+
+  const isGenerating = Boolean(activeSessionId && generatingSessionIds.has(activeSessionId))
+  const activeQuestionnaire = activeSessionId ? (activeQuestionnaires[activeSessionId] || null) : null
+  const activeApproval = activeSessionId ? (activeApprovals[activeSessionId] || null) : null
+
+  const activeSessionIdRef = useRef<string | null>(activeSessionId)
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
+  const messagesRef = useRef<Message[]>(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  const sessionBuffersRef = useRef<Map<string, Message[]>>(new Map())
 
   const isInitializedRef = useRef(false)
 
@@ -120,98 +141,132 @@ export function useAppStore() {
       return
     }
 
-    window.api.projects.getMessages(activeSessionId).then(setMessages)
-    window.api.projects.getCanvases(activeSessionId).then(setCanvases)
+    if (sessionBuffersRef.current.has(activeSessionId)) {
+      setMessages(sessionBuffersRef.current.get(activeSessionId)!)
+    } else {
+      window.api.projects.getMessages(activeSessionId).then((msgs) => {
+        if (activeSessionIdRef.current === activeSessionId) {
+          setMessages(msgs)
+          sessionBuffersRef.current.set(activeSessionId, msgs)
+        }
+      })
+    }
+
+    window.api.projects.getCanvases(activeSessionId).then((cvs) => {
+      if (activeSessionIdRef.current === activeSessionId) {
+        setCanvases(cvs)
+      }
+    })
   }, [activeSessionId])
 
   // Listen to streaming IPC events from AgentRunner
   useEffect(() => {
     if (!window.api) return
     const unsubscribe = window.api.agent.onStreamEvent((event: AgentStreamEvent) => {
+      const targetId = event.targetId
+      if (!targetId) return
+
       if (event.type === 'chunk') {
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant') {
-            const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
-            const textPartIdx = existingParts.findIndex(p => p.type === 'text')
-            if (textPartIdx !== -1) {
-              const currentPart = existingParts[textPartIdx] as { type: 'text'; text: string }
-              existingParts[textPartIdx] = { type: 'text', text: currentPart.text + event.text }
-            } else {
-              existingParts.push({ type: 'text', text: event.text })
-            }
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                content: last.content + event.text,
-                parts: existingParts
-              }
-            ]
+        const buffer = sessionBuffersRef.current.get(targetId) || (targetId === activeSessionIdRef.current ? [...messagesRef.current] : [])
+        const last = buffer[buffer.length - 1]
+        let updatedBuffer: Message[]
+
+        if (last && last.role === 'assistant') {
+          const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
+          const textPartIdx = existingParts.findIndex(p => p.type === 'text')
+          if (textPartIdx !== -1) {
+            const currentPart = existingParts[textPartIdx] as { type: 'text'; text: string }
+            existingParts[textPartIdx] = { type: 'text', text: currentPart.text + event.text }
           } else {
-            return [
-              ...prev,
-              {
-                id: `streaming_${Date.now()}`,
-                role: 'assistant',
-                content: event.text,
-                parts: [{ type: 'text', text: event.text }],
-                createdAt: Date.now()
-              }
-            ]
+            existingParts.push({ type: 'text', text: event.text })
           }
-        })
+          updatedBuffer = [
+            ...buffer.slice(0, -1),
+            {
+              ...last,
+              content: last.content + event.text,
+              parts: existingParts
+            }
+          ]
+        } else {
+          updatedBuffer = [
+            ...buffer,
+            {
+              id: `streaming_${Date.now()}`,
+              projectSessionId: targetId,
+              role: 'assistant',
+              content: event.text,
+              parts: [{ type: 'text', text: event.text }],
+              createdAt: Date.now()
+            }
+          ]
+        }
+
+        sessionBuffersRef.current.set(targetId, updatedBuffer)
+        if (targetId === activeSessionIdRef.current) {
+          setMessages(updatedBuffer)
+        }
       } else if (event.type === 'tool_call_start') {
         if (event.call.status === 'requires_approval') {
-          setActiveApproval({
-            toolCallId: event.call.id,
-            toolName: event.call.toolName,
-            args: event.call.args
-          })
-        }
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          const existingTools = last?.toolCalls ? [...last.toolCalls] : []
-          const updatedTools = existingTools.some(t => t.id === event.call.id)
-            ? existingTools.map(t => t.id === event.call.id ? event.call : t)
-            : [...existingTools, event.call]
-
-          if (last && last.role === 'assistant') {
-            const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
-            const existingPartIdx = existingParts.findIndex(
-              p => p.type === 'tool_call' && p.toolCall.id === event.call.id
-            )
-            if (existingPartIdx !== -1) {
-              existingParts[existingPartIdx] = { type: 'tool_call', toolCall: event.call }
-            } else {
-              existingParts.push({ type: 'tool_call', toolCall: event.call })
+          setActiveApprovals(prev => ({
+            ...prev,
+            [targetId]: {
+              toolCallId: event.call.id,
+              toolName: event.call.toolName,
+              args: event.call.args
             }
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                toolCalls: updatedTools,
-                parts: existingParts
-              }
-            ]
+          }))
+        }
+
+        const buffer = sessionBuffersRef.current.get(targetId) || (targetId === activeSessionIdRef.current ? [...messagesRef.current] : [])
+        const last = buffer[buffer.length - 1]
+        const existingTools = last?.toolCalls ? [...last.toolCalls] : []
+        const updatedTools = existingTools.some(t => t.id === event.call.id)
+          ? existingTools.map(t => t.id === event.call.id ? event.call : t)
+          : [...existingTools, event.call]
+
+        let updatedBuffer: Message[]
+        if (last && last.role === 'assistant') {
+          const existingParts: MessagePart[] = last.parts ? last.parts.map(p => ({ ...p })) : []
+          const existingPartIdx = existingParts.findIndex(
+            p => p.type === 'tool_call' && p.toolCall.id === event.call.id
+          )
+          if (existingPartIdx !== -1) {
+            existingParts[existingPartIdx] = { type: 'tool_call', toolCall: event.call }
           } else {
-            return [
-              ...prev,
-              {
-                id: `streaming_${Date.now()}`,
-                role: 'assistant',
-                content: '',
-                toolCalls: [event.call],
-                parts: [{ type: 'tool_call', toolCall: event.call }],
-                createdAt: Date.now()
-              }
-            ]
+            existingParts.push({ type: 'tool_call', toolCall: event.call })
           }
-        })
+          updatedBuffer = [
+            ...buffer.slice(0, -1),
+            {
+              ...last,
+              toolCalls: updatedTools,
+              parts: existingParts
+            }
+          ]
+        } else {
+          updatedBuffer = [
+            ...buffer,
+            {
+              id: `streaming_${Date.now()}`,
+              projectSessionId: targetId,
+              role: 'assistant',
+              content: '',
+              toolCalls: [event.call],
+              parts: [{ type: 'tool_call', toolCall: event.call }],
+              createdAt: Date.now()
+            }
+          ]
+        }
+
+        sessionBuffersRef.current.set(targetId, updatedBuffer)
+        if (targetId === activeSessionIdRef.current) {
+          setMessages(updatedBuffer)
+        }
       } else if (event.type === 'tool_call_stream') {
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (!last) return prev
+        const buffer = sessionBuffersRef.current.get(targetId) || (targetId === activeSessionIdRef.current ? [...messagesRef.current] : [])
+        const last = buffer[buffer.length - 1]
+        if (last) {
           const updatedTools = last.toolCalls?.map(tc => {
             if (tc.id === event.id) {
               return {
@@ -239,18 +294,28 @@ export function useAppStore() {
             }
             return p
           })
-          return [
-            ...prev.slice(0, -1),
+          const updatedBuffer = [
+            ...buffer.slice(0, -1),
             { ...last, toolCalls: updatedTools, parts: updatedParts }
           ]
-        })
-      } else if (event.type === 'tool_call_done') {
-        if (activeApproval && activeApproval.toolCallId === event.id) {
-          setActiveApproval(null)
+          sessionBuffersRef.current.set(targetId, updatedBuffer)
+          if (targetId === activeSessionIdRef.current) {
+            setMessages(updatedBuffer)
+          }
         }
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (!last) return prev
+      } else if (event.type === 'tool_call_done') {
+        setActiveApprovals(prev => {
+          if (prev[targetId]?.toolCallId === event.id) {
+            const next = { ...prev }
+            delete next[targetId]
+            return next
+          }
+          return prev
+        })
+
+        const buffer = sessionBuffersRef.current.get(targetId) || (targetId === activeSessionIdRef.current ? [...messagesRef.current] : [])
+        const last = buffer[buffer.length - 1]
+        if (last) {
           const updatedTools = last.toolCalls?.map(tc =>
             tc.id === event.id ? { ...tc, status: event.status, result: event.result } : tc
           )
@@ -267,32 +332,59 @@ export function useAppStore() {
             }
             return p
           })
-          return [
-            ...prev.slice(0, -1),
+          const updatedBuffer = [
+            ...buffer.slice(0, -1),
             { ...last, toolCalls: updatedTools, parts: updatedParts }
           ]
-        })
+          sessionBuffersRef.current.set(targetId, updatedBuffer)
+          if (targetId === activeSessionIdRef.current) {
+            setMessages(updatedBuffer)
+          }
+        }
       } else if (event.type === 'pause_for_user') {
-        setActiveQuestionnaire({
-          toolCallId: event.toolCallId,
-          payload: event.questionnaire
-        })
+        setActiveQuestionnaires(prev => ({
+          ...prev,
+          [targetId]: {
+            toolCallId: event.toolCallId,
+            payload: event.questionnaire
+          }
+        }))
       } else if (event.type === 'canvas_created') {
-        setCanvases(prev => {
-          const filtered = prev.filter(c => c.id !== event.canvas.id)
-          return [event.canvas, ...filtered]
-        })
-        setActiveCanvas(event.canvas)
+        if (targetId === activeSessionIdRef.current) {
+          setCanvases(prev => {
+            const filtered = prev.filter(c => c.id !== event.canvas.id)
+            return [event.canvas, ...filtered]
+          })
+          setActiveCanvas(event.canvas)
+        }
       } else if (event.type === 'title_generated') {
         setProjectSessions(prev => prev.map(s => s.id === event.targetId ? { ...s, title: event.title } : s))
       } else if (event.type === 'done') {
-        setIsGenerating(false)
-        setActiveQuestionnaire(null)
-        setActiveApproval(null)
+        setGeneratingSessionIds(prev => {
+          const next = new Set(prev)
+          next.delete(targetId)
+          return next
+        })
+        generatingSessionIdsRef.current.delete(targetId)
 
-        if (activeSessionId) {
-          window.api.projects.getMessages(activeSessionId).then(setMessages)
-          window.api.projects.getCanvases(activeSessionId).then((newCanvases) => {
+        setActiveQuestionnaires(prev => {
+          if (!prev[targetId]) return prev
+          const next = { ...prev }
+          delete next[targetId]
+          return next
+        })
+        setActiveApprovals(prev => {
+          if (!prev[targetId]) return prev
+          const next = { ...prev }
+          delete next[targetId]
+          return next
+        })
+
+        sessionBuffersRef.current.delete(targetId)
+
+        if (targetId === activeSessionIdRef.current) {
+          window.api.projects.getMessages(targetId).then(setMessages)
+          window.api.projects.getCanvases(targetId).then((newCanvases) => {
             setCanvases(newCanvases)
             setActiveCanvas(curr => {
               if (!curr) return null
@@ -304,16 +396,38 @@ export function useAppStore() {
         // Always re-fetch settings so customize_app changes apply immediately
         window.api.settings.get().then(setSettings)
       } else if (event.type === 'error') {
-        setIsGenerating(false)
-        setActiveQuestionnaire(null)
-        setActiveApproval(null)
+        setGeneratingSessionIds(prev => {
+          const next = new Set(prev)
+          next.delete(targetId)
+          return next
+        })
+        generatingSessionIdsRef.current.delete(targetId)
+
+        setActiveQuestionnaires(prev => {
+          if (!prev[targetId]) return prev
+          const next = { ...prev }
+          delete next[targetId]
+          return next
+        })
+        setActiveApprovals(prev => {
+          if (!prev[targetId]) return prev
+          const next = { ...prev }
+          delete next[targetId]
+          return next
+        })
+
+        sessionBuffersRef.current.delete(targetId)
+
+        if (targetId === activeSessionIdRef.current) {
+          window.api.projects.getMessages(targetId).then(setMessages)
+        }
       }
     })
 
     return () => {
       unsubscribe()
     }
-  }, [activeSessionId, activeApproval])
+  }, [])
 
   useEffect(() => {
     if (!window.api?.scheduler) return
@@ -438,8 +552,21 @@ export function useAppStore() {
       content: text || (attachments ? `[Attached ${attachments.length} file(s)]` : ''),
       createdAt: Date.now()
     }
-    setMessages(prev => [...prev, optUserMsg])
-    setIsGenerating(true)
+
+    const currentBuf = sessionBuffersRef.current.get(targetId) || (targetId === activeSessionIdRef.current ? messages : [])
+    const nextBuf = [...currentBuf, optUserMsg]
+    sessionBuffersRef.current.set(targetId, nextBuf)
+
+    if (targetId === activeSessionIdRef.current) {
+      setMessages(nextBuf)
+    }
+
+    setGeneratingSessionIds(prev => {
+      const next = new Set(prev)
+      next.add(targetId)
+      return next
+    })
+    generatingSessionIdsRef.current.add(targetId)
 
     const isNoProj = !activeProjectId || activeProjectId === '__no_project__'
     const activeProj = isNoProj ? null : projects.find(p => p.id === activeProjectId)
@@ -456,20 +583,50 @@ export function useAppStore() {
 
   const submitQuestionnaireAnswers = async (toolCallId: string, answers: Record<string, string | string[]>) => {
     await window.api.agent.submitUserResponse({ toolCallId, answers })
-    setActiveQuestionnaire(null)
+    setActiveQuestionnaires(prev => {
+      const next = { ...prev }
+      for (const [sessId, q] of Object.entries(next)) {
+        if (q.toolCallId === toolCallId) delete next[sessId]
+      }
+      return next
+    })
   }
 
   const approveTool = async (toolCallId: string, approved: boolean) => {
-    setActiveApproval(null)
+    setActiveApprovals(prev => {
+      const next = { ...prev }
+      for (const [sessId, a] of Object.entries(next)) {
+        if (a.toolCallId === toolCallId) delete next[sessId]
+      }
+      return next
+    })
     await window.api.agent.approveTool({ toolCallId, approved })
   }
 
-  const abortGeneration = async () => {
-    if (!activeSessionId || !window.api) return
-    await window.api.agent.abort(activeSessionId)
-    setIsGenerating(false)
-    setActiveQuestionnaire(null)
-    setActiveApproval(null)
+  const abortGeneration = async (targetSessionId?: string) => {
+    const targetId = targetSessionId || activeSessionId
+    if (!targetId || !window.api) return
+    await window.api.agent.abort(targetId)
+    setGeneratingSessionIds(prev => {
+      const next = new Set(prev)
+      next.delete(targetId)
+      return next
+    })
+    generatingSessionIdsRef.current.delete(targetId)
+    setActiveQuestionnaires(prev => {
+      const next = { ...prev }
+      delete next[targetId]
+      return next
+    })
+    setActiveApprovals(prev => {
+      const next = { ...prev }
+      delete next[targetId]
+      return next
+    })
+    sessionBuffersRef.current.delete(targetId)
+    if (targetId === activeSessionId) {
+      window.api.projects.getMessages(targetId).then(setMessages)
+    }
   }
 
   const createCanvasDocument = async (title = 'Untitled Canvas', content = '', language = 'markdown') => {
@@ -517,16 +674,31 @@ export function useAppStore() {
     const targetId = activeSessionId
     if (!targetId || !window.api) return
 
-    if (isGenerating) {
+    if (generatingSessionIdsRef.current.has(targetId)) {
       await window.api.agent.abort(targetId)
-      setIsGenerating(false)
+      setGeneratingSessionIds(prev => {
+        const next = new Set(prev)
+        next.delete(targetId)
+        return next
+      })
+      generatingSessionIdsRef.current.delete(targetId)
     }
-    setActiveQuestionnaire(null)
-    setActiveApproval(null)
+    setActiveQuestionnaires(prev => {
+      const next = { ...prev }
+      delete next[targetId]
+      return next
+    })
+    setActiveApprovals(prev => {
+      const next = { ...prev }
+      delete next[targetId]
+      return next
+    })
+    sessionBuffersRef.current.delete(targetId)
 
     try {
       const result = await window.api.projects.rollback({ sessionId: targetId, messageId: message.id, deleteTargetMessage: true })
       setMessages(result.remainingMessages)
+      sessionBuffersRef.current.set(targetId, result.remainingMessages)
 
       const updatedCanvases = await window.api.projects.getCanvases(targetId)
       setCanvases(updatedCanvases)
@@ -567,6 +739,7 @@ export function useAppStore() {
     activeCanvasModal,
     setActiveCanvasModal,
     isGenerating,
+    generatingSessionIds,
     activeQuestionnaire,
     activeApproval,
     createNewChat: (title?: string) => createProjectSession(title, '__no_project__'),

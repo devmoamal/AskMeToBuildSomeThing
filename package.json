@@ -1,6 +1,6 @@
 {
   "name": "askmetobuildsomething",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Agentic Desktop Assistant with Chats, Projects, Terminal, Canvas, and Questionnaire",
   "author": "Moamal Hussin <dev.moamal@gmail.com>",
   "license": "MIT",
@@ -34,8 +34,6 @@
     "vite-plugin-electron-renderer": "^1.0.0"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.57",
-    "@ai-sdk/openai": "^4.0.70",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@radix-ui/react-popover": "^1.1.23",
@@ -44,7 +42,6 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@types/marked": "^6.0.0",
     "@types/turndown": "^5.0.6",
-    "ai": "^7.0.106",
     "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -52,6 +49,7 @@
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.47.0",
     "marked": "^18.0.13",
+    "officeparser": "^8.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",

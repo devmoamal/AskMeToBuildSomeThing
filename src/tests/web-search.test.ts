@@ -64,7 +64,10 @@ describe('Web Search Tool & DuckDuckGo Parser', () => {
     }
 
     try {
-      const output = await searchTool!.execute({ query: 'electron js', numResults: 3 }, mockCtx, 'call_search_1')
+      const output = await Promise.race([
+        searchTool!.execute({ query: 'electron js', numResults: 3 }, mockCtx, 'call_search_1'),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+      ])
       expect(output).toBeDefined()
       expect(output.query).toBe('electron js')
       expect(Array.isArray(output.results)).toBe(true)
@@ -72,5 +75,5 @@ describe('Web Search Tool & DuckDuckGo Parser', () => {
       // In CI environments where outbound HTTP might be blocked or timed out, gracefully skip
       expect(true).toBe(true)
     }
-  })
+  }, 15000)
 })

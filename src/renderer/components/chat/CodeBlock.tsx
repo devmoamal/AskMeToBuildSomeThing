@@ -15,7 +15,7 @@ interface CodeBlockProps {
  */
 export const CodeBlock: React.FC<CodeBlockProps> = ({ className, language: propLang, value, children }) => {
   const [copied, setCopied] = useState(false)
-  const match = /language-(w+)/.exec(className || '')
+  const match = /language-(\w+)/.exec(className || '')
   const language = propLang || (match ? match[1] : '')
   const codeString = value !== undefined ? value : String(children || '').replace(/\n$/, '')
   const isMultiLine = codeString.includes('\n')

@@ -9,7 +9,14 @@ import { registerCanvasesIpc } from './canvases.ipc'
 import { registerUpdaterIpc } from './updater.ipc'
 import { registerSchedulerIpc } from './scheduler.ipc'
 
+let isRegistered = false
+
 export function registerAllIpc(mainWindow: BrowserWindow) {
+  if (isRegistered) {
+    return
+  }
+  isRegistered = true
+
   registerProvidersIpc()
   registerSettingsIpc()
   registerChatsIpc()

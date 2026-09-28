@@ -80,16 +80,21 @@ export class AnthropicCompatibleAdapter implements ILlmProviderAdapter {
       const m = nonSystemMessages[i]
 
       if (m.role === 'tool') {
-        formattedMessages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: m.toolCallId || `tool_legacy_${i}`,
-              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')
-            }
-          ]
-        })
+        const toolResultBlock = {
+          type: 'tool_result',
+          tool_use_id: m.toolCallId || `tool_legacy_${i}`,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')
+        }
+
+        const lastMsg = formattedMessages[formattedMessages.length - 1]
+        if (lastMsg && lastMsg.role === 'user' && Array.isArray(lastMsg.content)) {
+          lastMsg.content.push(toolResultBlock)
+        } else {
+          formattedMessages.push({
+            role: 'user',
+            content: [toolResultBlock]
+          })
+        }
         continue
       }
 
@@ -137,9 +142,49 @@ export class AnthropicCompatibleAdapter implements ILlmProviderAdapter {
         continue
       }
 
-      formattedMessages.push({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content || ''
+      const role = m.role === 'assistant' ? 'assistant' : 'user'
+      let contentBlock: any = m.content || ''
+
+      if (m.images && m.images.length > 0 && role === 'user') {
+        const imageBlocks = m.images.map(img => ({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: img.mediaType || 'image/jpeg',
+            data: img.base64
+          }
+        }))
+        contentBlock = [
+          ...imageBlocks,
+          ...(m.content ? [{ type: 'text', text: m.content }] : [])
+        ]
+      }
+
+      // Anthropic requires strictly alternating user/assistant roles
+      const lastMsg = formattedMessages[formattedMessages.length - 1]
+      if (lastMsg && lastMsg.role === role) {
+        if (Array.isArray(lastMsg.content)) {
+          if (Array.isArray(contentBlock)) {
+            lastMsg.content.push(...contentBlock)
+          } else if (contentBlock) {
+            lastMsg.content.push({ type: 'text', text: contentBlock })
+          }
+        } else {
+          lastMsg.content = `${lastMsg.content}\n\n${typeof contentBlock === 'string' ? contentBlock : ''}`.trim()
+        }
+      } else {
+        formattedMessages.push({
+          role,
+          content: contentBlock
+        })
+      }
+    }
+
+    // Ensure conversation starts with a user message if not empty
+    if (formattedMessages.length > 0 && formattedMessages[0].role === 'assistant') {
+      formattedMessages.unshift({
+        role: 'user',
+        content: 'Begin conversation.'
       })
     }
 

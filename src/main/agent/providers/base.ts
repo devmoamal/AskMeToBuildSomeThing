@@ -7,6 +7,7 @@ export interface ProviderChatMessage {
   toolCallId?: string
   toolCalls?: ToolCallRecord[]
   reasoning_content?: string
+  images?: Array<{ mediaType: string; base64: string }>
 }
 
 export interface ProviderStreamParams {

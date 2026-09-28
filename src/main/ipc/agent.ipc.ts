@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { AgentRunner } from '../agent/runner'
 import type { SendPromptPayload, UserResponsePayload, ToolApprovalPayload } from '../../shared/types'
 
@@ -8,18 +8,21 @@ export function registerAgentIpc(mainWindow: BrowserWindow) {
     (async () => {
       try {
         const stream = AgentRunner.run(payload, (event) => {
-          if (!mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('agent:streamEvent', event)
+          const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || mainWindow
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('agent:streamEvent', event)
           }
         })
         for await (const _ of stream) {
           // Event emission handled by the callback
         }
       } catch (err: any) {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('agent:streamEvent', {
+        const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || mainWindow
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('agent:streamEvent', {
             type: 'error',
-            error: err.message || 'Unknown streaming failure'
+            error: err.message || 'Unknown streaming failure',
+            targetId: payload.targetId
           })
         }
       }

@@ -145,15 +145,15 @@ export type CanvasDocument = {
 }
 
 export type AgentStreamEvent =
-  | { type: 'chunk'; text: string }
-  | { type: 'tool_call_start'; call: ToolCallRecord }
-  | { type: 'tool_call_stream'; id: string; chunk: string }
-  | { type: 'tool_call_done'; id: string; result: any; status: ToolCallStatus }
-  | { type: 'pause_for_user'; questionnaire: QuestionnairePayload; toolCallId: string }
-  | { type: 'canvas_created'; canvas: CanvasDocument }
+  | { type: 'chunk'; text: string; targetId: string }
+  | { type: 'tool_call_start'; call: ToolCallRecord; targetId: string }
+  | { type: 'tool_call_stream'; id: string; chunk: string; targetId: string }
+  | { type: 'tool_call_done'; id: string; result: any; status: ToolCallStatus; targetId: string }
+  | { type: 'pause_for_user'; questionnaire: QuestionnairePayload; toolCallId: string; targetId: string }
+  | { type: 'canvas_created'; canvas: CanvasDocument; targetId: string }
   | { type: 'title_generated'; targetId: string; title: string }
-  | { type: 'error'; error: string }
-  | { type: 'done'; finalMessage: Message }
+  | { type: 'error'; error: string; targetId: string }
+  | { type: 'done'; finalMessage: Message; targetId: string }
 
 export type SendPromptPayload = {
   mode: 'chat' | 'project'
@@ -163,6 +163,7 @@ export type SendPromptPayload = {
   providerId: string
   model: string
   systemPrompt?: string
+  images?: Array<{ mediaType: string; base64: string }>
 }
 
 export type ToolApprovalPayload = {

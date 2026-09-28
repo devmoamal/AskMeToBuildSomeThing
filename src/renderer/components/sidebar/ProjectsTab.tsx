@@ -20,6 +20,7 @@ interface ProjectsTabProps {
   activeProjectId: string | null
   sessions: ProjectSession[]
   activeSessionId: string | null
+  generatingSessionIds?: Set<string>
   onSelectProject: (projectId: string) => void
   onSelectSession: (sessionId: string) => void
   onPickFolder: () => void
@@ -34,6 +35,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
   activeProjectId,
   sessions,
   activeSessionId,
+  generatingSessionIds,
   onSelectProject,
   onSelectSession,
   onPickFolder,
@@ -89,6 +91,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
   const renderSessionItem = (sess: ProjectSession, projId: string) => {
     const isSessionActive = activeSessionId === sess.id
     const isEditing = editingSessionId === sess.id
+    const isRunning = generatingSessionIds?.has(sess.id)
 
     return (
       <div
@@ -121,7 +124,15 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
             className="flex-1 bg-[#111] border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-100 outline-none"
           />
         ) : (
-          <span className="truncate flex-1 min-w-0 pr-1.5 text-sm">{sess.title}</span>
+          <div className="flex items-center gap-2 flex-1 min-w-0 pr-1.5">
+            {isRunning && (
+              <span className="relative flex h-2 w-2 shrink-0" title="Generating in background">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.9)]" />
+              </span>
+            )}
+            <span className="truncate text-sm">{sess.title}</span>
+          </div>
         )}
 
         {!isEditing && (

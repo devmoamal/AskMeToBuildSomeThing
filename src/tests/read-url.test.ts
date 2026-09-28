@@ -90,5 +90,5 @@ describe('Self-Hosted Read URL / Site Crawler Tool', () => {
       // In CI environments where outbound HTTP might be blocked or timed out, gracefully skip
       expect(true).toBe(true)
     }
-  })
+  }, 15000)
 })

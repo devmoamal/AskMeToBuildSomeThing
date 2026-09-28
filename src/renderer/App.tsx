@@ -148,6 +148,7 @@ export const App: React.FC = () => {
         activeProjectId={store.activeProjectId}
         projectSessions={store.projectSessions}
         activeSessionId={store.activeSessionId}
+        generatingSessionIds={store.generatingSessionIds}
         onSelectProject={store.setActiveProjectId}
         onSelectSession={store.setActiveSessionId}
         onPickFolder={store.selectProjectFolder}

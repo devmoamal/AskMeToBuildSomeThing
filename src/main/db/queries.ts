@@ -44,7 +44,8 @@ export const dbQueries = {
     }))
   },
 
-  async getProviderById(id: string): Promise<ProviderConfig | null> {
+  async getProviderById(id?: string): Promise<ProviderConfig | null> {
+    if (!id) return null
     const db = getDb()
     const rows = await db.select().from(providersTable).where(eq(providersTable.id, id))
     if (!rows[0]) return null

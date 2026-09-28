@@ -77,7 +77,8 @@ export class AgentRunner {
       if (!provider) {
         const errorEv: AgentStreamEvent = {
           type: 'error',
-          error: 'No AI provider configured. Please configure a provider in Settings or the Onboarding Wizard.'
+          error: 'No AI provider configured. Please configure a provider in Settings or the Onboarding Wizard.',
+          targetId: payload.targetId
         }
         if (onEvent) onEvent(errorEv)
         yield errorEv
@@ -230,9 +231,11 @@ AUTONOMOUS EXECUTION PRINCIPLES:
             }
           }
         } else {
+          const isCurrentMsg = m.id === userMessageId
           providerMessages.push({
             role: m.role as any,
-            content: m.content
+            content: m.content,
+            images: isCurrentMsg ? payload.images : undefined
           })
         }
       }
@@ -278,7 +281,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               last.text += chunk.text
             }
 
-            const ev: AgentStreamEvent = { type: 'chunk', text: chunk.text }
+            const ev: AgentStreamEvent = { type: 'chunk', text: chunk.text, targetId: payload.targetId }
             if (onEvent) onEvent(ev)
             yield ev
           } else if (chunk.type === 'tool_call') {
@@ -289,7 +292,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               completedToolCalls.push(chunk.toolCall)
               chronologicalParts.push({ type: 'tool_call', toolCall: chunk.toolCall })
 
-              const ev: AgentStreamEvent = { type: 'tool_call_start', call: chunk.toolCall }
+              const ev: AgentStreamEvent = { type: 'tool_call_start', call: chunk.toolCall, targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
             }
@@ -314,7 +317,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
             if (!tool) {
               tc.status = 'failed'
               tc.error = `Tool ${tc.toolName} not recognized`
-              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed' }
+              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed', targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
               providerMessages.push({
@@ -329,7 +332,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
             if (!tool.allowedModes.includes(payload.mode)) {
               tc.status = 'failed'
               tc.error = `Tool ${tc.toolName} is restricted and cannot be used in ${payload.mode} mode`
-              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed' }
+              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed', targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
               providerMessages.push({
@@ -347,14 +350,15 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               projectSessionId: payload.mode === 'project' ? payload.targetId : undefined,
               settings,
               onStream: (subChunk) => {
-                const ev: AgentStreamEvent = { type: 'tool_call_stream', id: tc.id, chunk: subChunk }
+                const ev: AgentStreamEvent = { type: 'tool_call_stream', id: tc.id, chunk: subChunk, targetId: payload.targetId }
                 if (onEvent) onEvent(ev)
               },
               pauseForQuestionnaire: async (qPayload: QuestionnairePayload, callId: string) => {
                 const pauseEvent: AgentStreamEvent = {
                   type: 'pause_for_user',
                   questionnaire: qPayload,
-                  toolCallId: callId
+                  toolCallId: callId,
+                  targetId: payload.targetId
                 }
                 if (onEvent) onEvent(pauseEvent)
                 return new Promise<Record<string, string | string[]>>((resolve, reject) => {
@@ -363,7 +367,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               },
               requireToolApproval: async (tName: string, args: any) => {
                 tc.status = 'requires_approval'
-                const approvalEv: AgentStreamEvent = { type: 'tool_call_start', call: tc }
+                const approvalEv: AgentStreamEvent = { type: 'tool_call_start', call: tc, targetId: payload.targetId }
                 if (onEvent) onEvent(approvalEv)
                 return new Promise<boolean>((resolve, reject) => {
                   AgentRunner.activeApprovals.set(tc.id, { resolve, reject })
@@ -385,7 +389,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
                 }
               }
 
-              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result, status: 'completed' }
+              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result, status: 'completed', targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
 
@@ -403,7 +407,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
                   createdAt: Date.now(),
                   updatedAt: Date.now()
                 }
-                const canvasEv: AgentStreamEvent = { type: 'canvas_created', canvas: canvasDoc }
+                const canvasEv: AgentStreamEvent = { type: 'canvas_created', canvas: canvasDoc, targetId: payload.targetId }
                 if (onEvent) onEvent(canvasEv)
                 yield canvasEv
               }
@@ -425,7 +429,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
                 }
               }
 
-              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed' }
+              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: null, status: 'failed', targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
 
@@ -495,7 +499,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
       }
       await dbQueries.saveMessage(finalMessage)
 
-      const doneEv: AgentStreamEvent = { type: 'done', finalMessage }
+      const doneEv: AgentStreamEvent = { type: 'done', finalMessage, targetId: payload.targetId }
       if (onEvent) onEvent(doneEv)
       yield doneEv
     } catch (err: any) {
@@ -525,7 +529,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
           await dbQueries.saveMessage(partialMessage)
         } catch {}
       }
-      const errorEv: AgentStreamEvent = { type: 'error', error: err.message || 'Agent error occurred' }
+      const errorEv: AgentStreamEvent = { type: 'error', error: err.message || 'Agent error occurred', targetId: payload.targetId }
       if (onEvent) onEvent(errorEv)
       yield errorEv
     } finally {

@@ -197,10 +197,31 @@ export class OpenAiCompatibleAdapter implements ILlmProviderAdapter {
         continue
       }
 
-      formattedMessages.push({
-        role: m.role,
-        content: m.content || ''
-      })
+      if (m.images && m.images.length > 0 && m.role === 'user') {
+        const contentParts: any[] = []
+        if (m.content) {
+          contentParts.push({ type: 'text', text: m.content })
+        }
+        for (const img of m.images) {
+          const mediaType = img.mediaType || 'image/jpeg'
+          const dataUrl = img.base64.startsWith('data:') ? img.base64 : `data:${mediaType};base64,${img.base64}`
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: dataUrl
+            }
+          })
+        }
+        formattedMessages.push({
+          role: m.role,
+          content: contentParts
+        })
+      } else {
+        formattedMessages.push({
+          role: m.role,
+          content: m.content || ''
+        })
+      }
     }
 
     const body: any = {

@@ -92,7 +92,8 @@ export async function fetchDuckDuckGoInstantAnswer(query: string): Promise<WebSe
     const res = await fetch(apiUrl, {
       headers: {
         'User-Agent': 'AskMeToBuildSomeThing/1.0 (Desktop Assistant)'
-      }
+      },
+      signal: AbortSignal.timeout(4000)
     })
     if (!res.ok) return []
     const data = await res.json() as any
@@ -141,7 +142,8 @@ export async function searchDuckDuckGo(query: string, numResults: number = 5): P
         ...commonHeaders,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: `q=${encodeURIComponent(query)}`
+      body: `q=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(4000)
     })
 
     if (res.ok) {
@@ -161,7 +163,8 @@ export async function searchDuckDuckGo(query: string, numResults: number = 5): P
         ...commonHeaders,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: `q=${encodeURIComponent(query)}`
+      body: `q=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(4000)
     })
 
     if (res.ok) {
