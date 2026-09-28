@@ -11,6 +11,10 @@ import { FileReadActionCard } from './ToolCards/FileReadActionCard'
 import { CanvasCard } from './ToolCards/CanvasCard'
 import { QuestionnaireCard } from './ToolCards/QuestionnaireCard'
 import { WebSearchActionCard } from './ToolCards/WebSearchActionCard'
+import { ReadUrlActionCard } from './ToolCards/ReadUrlActionCard'
+import { ExplorationActionCard } from './ToolCards/ExplorationActionCard'
+import { Clock, Palette } from 'lucide-react'
+import { VercelBadge } from '../ui/VercelIcon'
 import { parseThinkingAndContent } from '../../../shared/thinking'
 
 /**
@@ -302,6 +306,60 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                 key={tc.id || `tc_${idx}`}
                 toolCall={tc}
               />
+            )
+          }
+          if (tc.toolName === 'read_url') {
+            return (
+              <ReadUrlActionCard
+                key={tc.id || `tc_${idx}`}
+                toolCall={tc}
+              />
+            )
+          }
+          if (tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code') {
+            return (
+              <ExplorationActionCard
+                key={tc.id || `tc_${idx}`}
+                toolCall={tc}
+              />
+            )
+          }
+          if (tc.toolName === 'schedule_task') {
+            const isCompleted = tc.status === 'completed'
+            const isFailed = tc.status === 'failed'
+            return (
+              <div key={tc.id || `tc_${idx}`} className="my-1.5 rounded-lg border border-[#222] bg-[#000000] p-3 text-xs font-mono">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-zinc-200 font-semibold">{tc.args?.description || 'Scheduled Task'}</span>
+                  </div>
+                  <VercelBadge variant={isCompleted ? 'success' : isFailed ? 'error' : 'warning'}>
+                    {tc.status}
+                  </VercelBadge>
+                </div>
+                {tc.args?.delaySeconds && (
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    Wait: {tc.args.delaySeconds}s {tc.args.command ? `• Command: ${tc.args.command}` : ''}
+                  </div>
+                )}
+              </div>
+            )
+          }
+          if (tc.toolName === 'customize_app') {
+            return (
+              <div key={tc.id || `tc_${idx}`} className="my-1.5 rounded-lg border border-[#222] bg-[#000000] p-3 text-xs font-mono">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Palette className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="text-zinc-200 font-semibold">App Theme & Style Applied</span>
+                  </div>
+                  <VercelBadge variant="success">applied</VercelBadge>
+                </div>
+                {tc.args?.explanation && (
+                  <p className="text-[11px] text-zinc-400 mt-1 font-sans">{tc.args.explanation}</p>
+                )}
+              </div>
             )
           }
           return null

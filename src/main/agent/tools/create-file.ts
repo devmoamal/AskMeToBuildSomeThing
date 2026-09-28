@@ -27,9 +27,14 @@ export const createFileTool: AgentTool<CreateFileArgs> = {
       throw new Error('Cannot create file: No project folder selected')
     }
 
+    const resolvedProject = path.resolve(ctx.projectFolder)
     const fullPath = path.isAbsolute(args.path)
-      ? args.path
-      : path.resolve(ctx.projectFolder, args.path)
+      ? path.resolve(args.path)
+      : path.resolve(resolvedProject, args.path)
+
+    if (!fullPath.startsWith(resolvedProject)) {
+      throw new Error(`Access denied: Path "${args.path}" escapes project boundary`)
+    }
 
     // Check approval if auto-approve is false
     if (!ctx.settings.autoApproveFileWrite && ctx.requireToolApproval) {

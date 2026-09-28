@@ -56,9 +56,14 @@ export const terminalTool: AgentTool<TerminalArgs> = {
       throw new Error('Cannot run terminal: No project folder selected')
     }
 
+    const resolvedProject = path.resolve(ctx.projectFolder)
     const workingDir = args.cwd
-      ? (path.isAbsolute(args.cwd) ? args.cwd : path.resolve(ctx.projectFolder, args.cwd))
-      : ctx.projectFolder
+      ? (path.isAbsolute(args.cwd) ? path.resolve(args.cwd) : path.resolve(resolvedProject, args.cwd))
+      : resolvedProject
+
+    if (!workingDir.startsWith(resolvedProject)) {
+      throw new Error(`Access denied: Working directory escapes project boundary`)
+    }
 
     // Check approval: Auto-approve safe dev commands (tests, builds, lints) or when autoApproveTerminal is enabled
     const isSafe = isSafeDevelopmentCommand(args.command)
@@ -69,9 +74,15 @@ export const terminalTool: AgentTool<TerminalArgs> = {
       }
     }
 
-    const resolvedTimeout = args.timeoutMs !== undefined
+    const isDevServer = /\b(dev|serve|start|watch|nodemon)\b/i.test(args.command)
+    let resolvedTimeout = args.timeoutMs !== undefined
       ? args.timeoutMs
       : (ctx.settings.terminalWaitUntilComplete ? 0 : ctx.settings.terminalTimeoutMs)
+
+    // Prevent dev servers from freezing agent indefinitely
+    if (resolvedTimeout === 0 && isDevServer) {
+      resolvedTimeout = 7000
+    }
 
     const result = await TerminalRunner.run({
       command: args.command,

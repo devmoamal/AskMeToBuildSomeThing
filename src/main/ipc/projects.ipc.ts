@@ -48,6 +48,11 @@ export function registerProjectsIpc() {
   ipcMain.handle('projects:readFile', async (_, filePath: string) => {
     const fs = await import('node:fs/promises')
     try {
+      const { DocumentConverter } = await import('../agent/doc-converter')
+      if (DocumentConverter.isConvertibleDocument(filePath)) {
+        const docRes = await DocumentConverter.convertToMarkdown(filePath)
+        return docRes.markdown
+      }
       return await fs.readFile(filePath, 'utf-8')
     } catch (err: any) {
       return `[Error reading file: ${err.message}]`
