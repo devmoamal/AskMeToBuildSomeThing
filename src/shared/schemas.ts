@@ -27,6 +27,7 @@ export const AppSettingsSchema = z.object({
   infiniteLoop: z.boolean().default(true),
   autoCompactContext: z.boolean().default(true),
   pruneHistoricalToolOutputs: z.boolean().default(true),
+  preserveRecentTokens: z.number().default(10000),
   customCss: z.string().default(''),
   chatSystemPrompt: z.string().default(
     'You are AskMeToBuildSomeThing, a friendly AI collaborator. In general chats, you help brainstorm, write markdown canvas notes, customize the app appearance and settings, and interview the user with questionnaires when you need choices.'
@@ -155,4 +156,31 @@ export const CustomizeAppArgsSchema = z.object({
   projectSystemPrompt: z.string().optional().describe('Optional custom system prompt / personality for the assistant in Project mode.')
 })
 export type CustomizeAppArgs = z.infer<typeof CustomizeAppArgsSchema>
+
+export const ManageMemoryArgsSchema = z.object({
+  action: z.enum(['save', 'list', 'delete']).describe('The action to perform: save a memory, list all memories, or delete by id or key'),
+  key: z.string().optional().describe('Memory identifier or title (e.g. "auth_pattern", "db_orm_rules")'),
+  content: z.string().optional().describe('Detailed content, rule, or architectural fact to remember across sessions'),
+  category: z.enum(['architecture', 'decision', 'convention', 'dependency', 'general']).default('architecture').describe('Category classification for this memory'),
+  id: z.string().optional().describe('Memory ID (required for deleting a specific memory)')
+})
+export type ManageMemoryArgs = z.infer<typeof ManageMemoryArgsSchema>
+
+export const GetFileOutlineArgsSchema = z.object({
+  path: z.string().min(1, 'Path is required').describe('Relative or absolute file path to inspect (TypeScript, JavaScript, Python, Rust, Go, etc.)')
+})
+export type GetFileOutlineArgs = z.infer<typeof GetFileOutlineArgsSchema>
+
+export const GitStatusArgsSchema = z.object({
+  showDiff: z.boolean().default(false).describe('Whether to include a compact git diff of unstaged and staged changes'),
+  path: z.string().optional().describe('Optional path or file to filter git status/diff')
+})
+export type GitStatusArgs = z.infer<typeof GitStatusArgsSchema>
+
+export const TaskArgsSchema = z.object({
+  subagent_type: z.enum(['explore', 'review', 'general']).default('general').describe('Specialized agent role: "explore" for codebase discovery/grep, "review" for code audit/diff checking, "general" for independent task execution'),
+  description: z.string().min(1, 'Description is required').describe('Short 3-5 word title describing the delegated task'),
+  prompt: z.string().min(1, 'Prompt is required').describe('Specific detailed instructions for the subagent to execute')
+})
+export type TaskArgs = z.infer<typeof TaskArgsSchema>
 

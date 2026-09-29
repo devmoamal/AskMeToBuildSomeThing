@@ -70,23 +70,36 @@ flowchart TD
 - **Chats Slide Tab**: Create, organize, and collapse chats into user-defined folder groups. Safe conversational sandbox without filesystem or shell access.
 - **Projects Slide Tab**: Connect any folder on your device via native OS folder picker. Creates persistent multi-session threads tied directly to that directory.
 
-### 2. Typeset Markdown Canvas (/canvas)
-- Type /canvas into the chat input to invoke autocomplete.
-- Interactive inline preview cards with instant copy, version tracking, and quick-expand actions.
-- Full-screen modal with split view: Raw Markdown Editor with live edits and synchronized Typeset Preview.
+### 2. The Iron Brain Context & Resilience Engine (v1.1.0)
+- **Two-Phase Compaction**: Passive tool result pruning (`[Tool result cleared]`) saves 80%+ tokens on long runs, coupled with structured 5-section anchor compaction (`Objective`, `Important Details`, `Work State`, `Next Move`, `Relevant Files`) so the agent never forgets architectural decisions.
+- **Managed Tool Spillover (Truncation)**: High-volume tool outputs (large terminal logs, file dumps) are safely bounded to 2,000 lines / 50KB and persisted to `.data/tool_outputs/tool_*.log` with interactive file links.
+- **Self-Healing Tool Validation**: Catches model argument schema errors with `InvalidArgumentsError`, giving the model actionable instructions to self-correct its arguments automatically.
+- **Real-Time Token Usage HUD**: Live token usage counter displayed in the chat input bar.
 
-### 3. Human-in-the-Loop Questionnaires (sk_user)
+### 3. Codebase Cartographer & Intelligence Tools
+- **AST Outline Inspector (`get_file_outline`)**: Extracts functions, classes, interfaces, and methods without reading massive files raw.
+- **Git Intelligence (`git_status`)**: Real-time git branch tracking, dirty file detection, and commit/diff inspection.
+- **Autonomous Project Memory (`manage_memory`)**: The agent records, retrieves, and updates architectural patterns and conventions across sessions.
+- **Subagent Swarm (`task`)**: Delegate specialized exploration, review, or testing tasks to focused subagents returning structured results.
+
+### 4. Typeset Markdown Canvas 2.0 (/canvas)
+- Type `/canvas` into the chat input to invoke autocomplete.
+- **Split View**: Raw Markdown Editor on the left with live synchronized typeset preview on the right.
+- **Live Sandbox Preview**: Interactive sandboxed HTML iframe preview for web apps, Canvas games, and rich UI mockups.
+- **Quick Download & Export**: Instant export to `.md` or `.html`.
+
+### 5. Human-in-the-Loop Questionnaires (`ask_user`)
 - The AI agent dynamically interrupts execution to solicit user feedback when facing architectural ambiguities or design trade-offs.
 - Supports single-choice, multiple-choice, and open-ended text inputs.
 - Agent generation pauses cleanly and automatically resumes once the user submits answers.
 
-### 4. Interactive Terminal & Safety Guardrails
+### 6. Interactive Terminal & Safety Guardrails
 - Streaming stdout and stderr output cards directly within the chat message history.
 - Collapsible bottom terminal drawer with persistent shell sessions.
 - Shell configuration: supports PowerShell 7 / Windows PowerShell, CMD, Git Bash, and WSL on Windows, plus zsh/bash on macOS and Linux.
 - Tool Safety Approvals: granular approval switches for terminal execution and file writing.
 
-### 5. Multi-Provider LLM Engine
+### 7. Multi-Provider LLM Engine
 - **OpenAI-Compatible Adapter**: Connects to OpenAI, DeepSeek, OpenRouter, Groq, Ollama, LM Studio, or any OpenAI-format REST endpoint.
 - **Anthropic Claude Adapter**: Direct SSE streaming with tool calling and prompt caching support.
 - **Dynamic Model Fetching**: Query available models from providers on demand.

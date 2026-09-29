@@ -100,7 +100,19 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
     return (
       <div className="flex flex-col items-end group my-1.5">
         <div className="relative max-w-[85%] rounded-2xl bg-zinc-800 text-zinc-100 px-4 py-2.5 text-sm leading-relaxed shadow-xs select-text">
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          {message.images && message.images.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2 justify-end">
+              {message.images.map((img, idx) => (
+                <img
+                  key={idx}
+                  src={`data:${img.mediaType};base64,${img.base64}`}
+                  alt="Attachment"
+                  className="max-h-56 max-w-full rounded-lg object-contain border border-zinc-700/60 shadow-xs"
+                />
+              ))}
+            </div>
+          )}
+          {message.content && <p className="whitespace-pre-wrap">{message.content}</p>}
         </div>
 
         {/* Action buttons directly UNDER message, flowing naturally */}

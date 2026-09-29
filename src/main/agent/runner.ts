@@ -13,6 +13,8 @@ import { ToolRegistry } from './tools/registry'
 import type { AgentToolContext } from './tools/types'
 import type { QuestionnairePayload } from '../../shared/schemas'
 import { parseThinkingAndContent } from '../../shared/thinking'
+import { CompactionEngine, TokenEstimator } from './compaction'
+import { InvalidArgumentsError } from './tools/errors'
 
 export class AgentRunner {
   private static activePauses: Map<string, {
@@ -87,12 +89,22 @@ export class AgentRunner {
 
       // Save user message
       const userMessageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      const userParts: MessagePart[] = []
+      if (payload.images && payload.images.length > 0) {
+        for (const img of payload.images) {
+          userParts.push({ type: 'image', mediaType: img.mediaType, base64: img.base64 })
+        }
+      }
+      userParts.push({ type: 'text', text: payload.prompt })
+
       const userMessage: Message = {
         id: userMessageId,
         chatId: payload.mode === 'chat' ? payload.targetId : undefined,
         projectSessionId: payload.mode === 'project' ? payload.targetId : undefined,
         role: 'user',
         content: payload.prompt,
+        images: payload.images,
+        parts: userParts,
         createdAt: Date.now()
       }
       await dbQueries.saveMessage(userMessage)
@@ -123,8 +135,14 @@ export class AgentRunner {
       try {
         let projectId: string | undefined
         if (payload.mode === 'project') {
-          const sessions = await dbQueries.getProjectSessions(payload.targetId)
-          if (sessions && sessions[0]) projectId = sessions[0].projectId
+          const session = await dbQueries.getProjectSessionById(payload.targetId)
+          if (session) {
+            projectId = session.projectId
+          } else if (payload.projectFolder) {
+            const projects = await dbQueries.getProjects()
+            const match = projects.find(p => p.folderPath === payload.projectFolder)
+            if (match) projectId = match.id
+          }
         }
         if (projectId) {
           const memories = await dbQueries.getProjectMemories(projectId)
@@ -135,6 +153,42 @@ export class AgentRunner {
         }
       } catch {}
 
+      const isPlanMode = payload.executionMode === 'plan' || payload.prompt.trim().startsWith('/plan')
+
+      const projectInstructions = isPlanMode
+        ? `
+You are in PLAN MODE (Architect & Strategist) in the repository: ${payload.projectFolder || 'current project'}.
+Your objective is to thoroughly investigate, analyze the codebase, and produce a bulletproof implementation plan.
+RULES:
+1. READ-ONLY EXPLORATION: Use "get_file_outline", "read_file", "search_code", "list_dir", and "git_status" to explore.
+2. DO NOT make code edits or run destructive terminal commands in Plan Mode.
+3. If requirements or architecture have ambiguities, use "ask_user" to interview the user.
+4. When your research is complete, create an implementation spec/plan using "make_canvas" so the user can review and approve it before switching to Build mode.
+`
+        : `
+You are an autonomous senior software engineering agent operating in a continuous, self-verifying loop in the project repository: ${payload.projectFolder || 'current project'}.
+
+AUTONOMOUS EXECUTION PRINCIPLES:
+1. WORK CONTINUOUSLY UNTIL FULLY COMPLETE: Do not stop prematurely or hand back an incomplete task. If a task requires multiple steps, research, edits, and tests, keep working uninterrupted until the entire job is done.
+2. CODEBASE EXPLORATION: Use "get_file_outline" first to understand classes, functions, and symbols before reading large files. Use "list_dir" to understand folder structures and "find_files" to locate files. Use "search_code" to locate symbols across the project.
+3. GIT & DIFF AWARENESS: Use "git_status" to inspect active branch, dirty files, and diffs before and after modifying files.
+4. TARGETED EDITS: Use "edit_file" with old_str/new_str for surgical edits or full content replacements. Use "create_file" for new modules.
+5. SELF-VERIFICATION & COMPLETE EXECUTION: Always test and verify your changes using "use_terminal" (e.g. running test runners, compiler checks, or build commands). If a test fails, inspect the output, fix the code, and re-run until it passes.
+6. PERSISTENT MEMORY: Use "manage_memory" to record key architectural rules, technical constraints, or patterns for this project.
+7. SUBAGENT DELEGATION: Use "task" to delegate independent exploratory work or code reviews to subagents.
+8. TASK SCHEDULING: Use "schedule_task" if the user wants to run or check something after a delay.
+9. CONCLUDE CLEANLY: Once changes are verified, provide a clear, concise summary of the changes made and the validation results.
+- Use "ask_user" ONLY when user input is essential or when "/grill-me" is requested (ask ONE question at a time).
+- Use "web_search" and "read_url" when researching external packages, docs, or web APIs.
+- Use "customize_app" when the user asks to customize or retheme the app UI or system instructions.
+- COMMAND PARITY:
+  - If user types "/summary": Generate a comprehensive changelog and execution status report.
+  - If user types "/extend": Inspect the codebase and propose the next 3 high-value features or refactors to build.
+  - If user types "/compact": Review the thread, summarize older points into a compact state, and acknowledge context compaction.
+  - If user types "/review": Perform a rigorous code review of modified files.
+  - If user types "/test": Run the test suite and fix any broken tests autonomously.
+`
+
       const instructions = payload.mode === 'chat'
         ? `
 You are in conversational Chat Mode.
@@ -143,50 +197,21 @@ You are in conversational Chat Mode.
 - Use "web_search" when the user asks for real-time information, current facts, up-to-date documentation, package releases, news, or when you need external web references.
 - Use "read_url" to crawl and deep-dive into full webpage contents, documentation pages, or articles found via web search or provided directly by the user.
 - Use "customize_app" when the user asks to customize, restyle, retheme, recolor, change fonts, or adjust the app UI appearance or system instructions. Write valid CSS targeting variables or classes to style the app live in production.
-- Use "schedule_task" when the user asks to wait, delay, or schedule a command, reminder, or prompt to execute in the background (e.g. "ping google.com and tell me after 10 min").
+- Use "schedule_task" when the user asks to wait, delay, or schedule a command, reminder, or prompt to execute in the background.
 - ONLY call the "ask_user" tool when the user asks to interview them, asks for questions, or types "/grill-me".
-- QUESTIONING RULE (/grill-me): You must ask EXACTLY ONE question at a time using 'ask_user'. NEVER ask multiple questions at once. After receiving the user's answer, decide whether to ask the next single question or proceed to providing code/solution.
 - ONLY call the "make_canvas" tool when the user explicitly asks to create an editable canvas, document, or spec, or types "/canvas".
-- COMMAND PARITY:
-  - If user types "/summary": Provide an executive recap of the conversation, decisions made, and notes.
-  - If user types "/compact": Review the thread, summarize older points into a compact state, and acknowledge context compaction.
-  - If user types "/extend": Propose 3 high-value next features or extensions based on the discussion.
 - Do NOT attempt to use terminal or file tools in Chat mode (they are only available in Project mode).
 `
-        : `
-You are an autonomous senior software engineering agent operating in a continuous, self-verifying loop in the project repository: ${payload.projectFolder || 'current project'}.
+        : projectInstructions
 
-AUTONOMOUS EXECUTION PRINCIPLES:
-1. WORK CONTINUOUSLY UNTIL FULLY COMPLETE: Do not stop prematurely or hand back an incomplete task. If a task requires multiple steps, research, edits, and tests, keep working uninterrupted until the entire job is done.
-2. CODEBASE EXPLORATION: Use "list_dir" to understand folder structures and "find_files" to locate files. Use "search_code" (grep) to locate functions, types, and symbol definitions across the project.
-3. CONTEXT GATHERING: Use "read_file" to read relevant files and understand existing patterns. You can call multiple read or search tools in a single turn to gather context quickly.
-4. TARGETED EDITS: Use "edit_file" with old_str/new_str for surgical edits or full content replacements. Use "create_file" for new modules.
-5. SELF-VERIFICATION & COMPLETE EXECUTION: Always test and verify your changes using "use_terminal" (e.g. running test runners, compiler checks, or build commands). The terminal will wait until the command finishes completely. If a test fails, inspect the output, fix the code, and re-run until it passes.
-6. TASK SCHEDULING: Use "schedule_task" if the user wants to run or check something after a delay (e.g. "ping google.com after 10 min").
-7. CONCLUDE CLEANLY: Once changes are verified, provide a clear, concise summary of the changes made and the validation results.
-- Use "ask_user" ONLY when user input is essential or when "/grill-me" is requested (ask ONE question at a time).
-- Use "web_search" when researching external packages, docs, or web APIs, and use "read_url" to deep-dive into full documentation, tutorials, or GitHub issues from any found links.
-- Use "customize_app" when the user asks to customize or retheme the app UI or system instructions.
-- COMMAND PARITY:
-  - If user types "/summary": Generate a comprehensive changelog and execution status report.
-  - If user types "/extend": Inspect the codebase and propose the next 3 high-value features or refactors to build.
-  - If user types "/compact": Acknowledge context compaction and summarize recent milestones.
-  - If user types "/review": Perform a rigorous code review of modified files.
-  - If user types "/test": Run the test suite and fix any broken tests autonomously.
-`
       const systemPrompt = `${basePrompt}\n${instructions}${memoryContext}`
 
       const providerMessages: ProviderChatMessage[] = [
         { role: 'system', content: systemPrompt }
       ]
 
-      // Prune historical tool outputs older than the last 4 messages to save 80%+ tokens
-      const historicalCutoff = Math.max(0, history.length - 4)
-
       for (let i = 0; i < history.length; i++) {
         const m = history[i]
-        const isHistorical = settings.pruneHistoricalToolOutputs !== false && i < historicalCutoff
-
         if (m.role === 'assistant') {
           const thinkingPart = m.parts?.find(p => p.type === 'thinking') as { text: string } | undefined
           const parsed = parseThinkingAndContent(m.content || '')
@@ -202,26 +227,9 @@ AUTONOMOUS EXECUTION PRINCIPLES:
 
           if (m.toolCalls && m.toolCalls.length > 0) {
             for (const tc of m.toolCalls) {
-              let toolResultContent = tc.result !== undefined
+              const toolResultContent = tc.result !== undefined
                 ? (typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))
                 : (tc.error ? `Error: ${tc.error}` : 'Completed')
-
-              // Prune large historical tool outputs to conserve prompt context
-              if (isHistorical && toolResultContent.length > 300) {
-                if (tc.toolName === 'read_file') {
-                  const lines = toolResultContent.split('\n').length
-                  toolResultContent = `[read_file completed: ${lines} lines reviewed in earlier turn]`
-                } else if (tc.toolName === 'use_terminal') {
-                  const lines = toolResultContent.split('\n').length
-                  toolResultContent = `[use_terminal completed: command succeeded (${lines} lines output)]`
-                } else if (tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code') {
-                  toolResultContent = `[Codebase exploration query completed previously]`
-                } else if (tc.toolName === 'read_url' || tc.toolName === 'web_search') {
-                  toolResultContent = `[Web content analyzed in earlier turn]`
-                } else {
-                  toolResultContent = toolResultContent.slice(0, 250) + '... [Historical output collapsed to save context tokens]'
-                }
-              }
 
               providerMessages.push({
                 role: 'tool',
@@ -240,12 +248,93 @@ AUTONOMOUS EXECUTION PRINCIPLES:
         }
       }
 
+      // --- Phase 1: Context Compaction Engine ---
+      // 1. Passive Tool Result Pruning
+      if (settings.pruneHistoricalToolOutputs !== false) {
+        CompactionEngine.pruneHistoricalToolResults(
+          providerMessages,
+          settings.preserveRecentTokens || 10_000,
+          30_000
+        )
+      }
+
+      // 2. Estimate initial tokens
+      let currentTokens = TokenEstimator.estimateMessages(providerMessages)
+      const tokenEv: AgentStreamEvent = {
+        type: 'token_usage',
+        inputTokens: currentTokens,
+        totalTokens: currentTokens,
+        targetId: payload.targetId
+      }
+      if (onEvent) onEvent(tokenEv)
+      yield tokenEv
+
+      // 3. Active Compaction (if manually requested via /compact or tokens exceed threshold)
+      const isManualCompact = payload.prompt.trim() === '/compact'
+      const isAutoCompact = settings.autoCompactContext !== false && currentTokens > CompactionEngine.DEFAULT_MAX_CONTEXT_TOKENS
+
+      if ((isManualCompact || isAutoCompact) && providerMessages.length > 5) {
+        const { head, tail, priorSummary } = CompactionEngine.splitHeadAndTail(providerMessages)
+        if (head.length > 1) {
+          const serializedHead = head.map(m => CompactionEngine.serializeMessage(m)).join('\n\n')
+          const summaryPrompt = CompactionEngine.buildCompactionPrompt(serializedHead, priorSummary)
+
+          const adapter = ProviderAdapterFactory.getAdapter(provider.type)
+          const summaryStream = adapter.streamChat({
+            config: provider,
+            model: payload.model || provider.defaultModel || 'default',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a context summarization engine. Produce a structured summary matching the template.'
+              },
+              { role: 'user', content: summaryPrompt }
+            ]
+          })
+
+          let compactedSummary = ''
+          for await (const chunk of summaryStream) {
+            if (chunk.type === 'text') compactedSummary += chunk.text
+          }
+
+          if (compactedSummary.trim()) {
+            // Replace head with the new anchor message
+            providerMessages.splice(
+              1, // keep system prompt
+              head.length,
+              {
+                role: 'user',
+                content: `[CONTEXT COMPACTION ANCHOR]\n\n${compactedSummary.trim()}`
+              }
+            )
+
+            const compactEv: AgentStreamEvent = {
+              type: 'compaction_done',
+              summary: compactedSummary.trim(),
+              targetId: payload.targetId
+            }
+            if (onEvent) onEvent(compactEv)
+            yield compactEv
+
+            // Update token usage estimate after compaction
+            currentTokens = TokenEstimator.estimateMessages(providerMessages)
+            const postTokenEv: AgentStreamEvent = {
+              type: 'token_usage',
+              inputTokens: currentTokens,
+              totalTokens: currentTokens,
+              targetId: payload.targetId
+            }
+            if (onEvent) onEvent(postTokenEv)
+            yield postTokenEv
+          }
+        }
+      }
+
       const availableTools = ToolRegistry.getToolsForMode(payload.mode)
       const toolDeclarations = ToolRegistry.getToolDeclarations(payload.mode)
 
       let continueLoop = true
       let iterationCount = 0
-      // Infinite mode: run up to 500 iterations without interrupting until the AI is completely done
       const isInfinite = settings.infiniteLoop !== false
       const maxIterations = isInfinite ? 500 : (payload.mode === 'project' ? 35 : 12)
 
@@ -285,7 +374,6 @@ AUTONOMOUS EXECUTION PRINCIPLES:
             if (onEvent) onEvent(ev)
             yield ev
           } else if (chunk.type === 'tool_call') {
-            // Support batch tool calls: capture all distinct tool calls emitted in this turn
             const alreadyAdded = pendingToolCallsInIteration.some(tc => tc.id === chunk.toolCall.id)
             if (!alreadyAdded) {
               pendingToolCallsInIteration.push(chunk.toolCall)
@@ -304,7 +392,6 @@ AUTONOMOUS EXECUTION PRINCIPLES:
           continueLoop = true
 
           const parsedIter = parseThinkingAndContent(iterationText)
-          // In multi-step conversations, the assistant message that made the tool calls MUST precede the tool result messages
           providerMessages.push({
             role: 'assistant',
             content: parsedIter.content || '',
@@ -377,33 +464,34 @@ AUTONOMOUS EXECUTION PRINCIPLES:
 
             try {
               tc.status = 'executing'
-              const result = await tool.execute(tc.args, toolContext, tc.id)
+              // Execute through ToolRegistry with schema validation & managed disk spillover
+              const execResult = await ToolRegistry.executeTool(tc.toolName, tc.args, toolContext, tc.id)
               tc.status = 'completed'
-              tc.result = result
+              tc.result = execResult.result
 
               // Update in chronologicalParts
               for (const p of chronologicalParts) {
                 if (p.type === 'tool_call' && p.toolCall.id === tc.id) {
                   p.toolCall.status = 'completed'
-                  p.toolCall.result = result
+                  p.toolCall.result = execResult.result
                 }
               }
 
-              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result, status: 'completed', targetId: payload.targetId }
+              const ev: AgentStreamEvent = { type: 'tool_call_done', id: tc.id, result: execResult.result, status: 'completed', targetId: payload.targetId }
               if (onEvent) onEvent(ev)
               yield ev
 
               // If canvas was created, emit canvas event
-              if (tc.toolName === 'make_canvas' && result?.canvasId) {
+              if (tc.toolName === 'make_canvas' && execResult.result?.canvasId) {
                 const canvasDoc: CanvasDocument = {
-                  id: result.canvasId,
+                  id: execResult.result.canvasId,
                   messageId: tc.id,
                   chatId: toolContext.chatId,
                   projectSessionId: toolContext.projectSessionId,
-                  title: result.title,
-                  language: result.language,
-                  content: result.content,
-                  version: result.version || 1,
+                  title: execResult.result.title,
+                  language: execResult.result.language,
+                  content: execResult.result.content,
+                  version: execResult.result.version || 1,
                   createdAt: Date.now(),
                   updatedAt: Date.now()
                 }
@@ -415,7 +503,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               providerMessages.push({
                 role: 'tool',
                 toolCallId: tc.id,
-                content: typeof result === 'string' ? result : JSON.stringify(result)
+                content: typeof execResult.result === 'string' ? execResult.result : JSON.stringify(execResult.result)
               })
             } catch (toolErr: any) {
               tc.status = 'failed'
@@ -433,10 +521,15 @@ AUTONOMOUS EXECUTION PRINCIPLES:
               if (onEvent) onEvent(ev)
               yield ev
 
+              // Send self-healing feedback to model for InvalidArgumentsError or general execution error
+              const modelFacingError = toolErr instanceof InvalidArgumentsError || toolErr.name === 'InvalidArgumentsError'
+                ? toolErr.message
+                : `Error: ${toolErr.message}`
+
               providerMessages.push({
                 role: 'tool',
                 toolCallId: tc.id,
-                content: `Error: ${toolErr.message}`
+                content: modelFacingError
               })
             }
           }
@@ -463,9 +556,10 @@ AUTONOMOUS EXECUTION PRINCIPLES:
       const filesCreated = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'create_file' && tc.args?.path).map(tc => tc.args.path))]
       const filesEdited = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'edit_file' && tc.args?.path).map(tc => tc.args.path))]
       const commandsRun = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'use_terminal' && tc.args?.command).map(tc => tc.args.command))]
-      const scheduledTasks = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'schedule_task' && tc.args?.description).map(tc => tc.args.description))]
+      const memoriesSaved = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'manage_memory' && tc.args?.key).map(tc => tc.args.key))]
+      const subagentsRun = [...new Set(completedToolCalls.filter(tc => tc.status === 'completed' && tc.toolName === 'task' && tc.args?.description).map(tc => tc.args.description))]
 
-      if ((filesCreated.length > 0 || filesEdited.length > 0 || commandsRun.length > 0 || scheduledTasks.length > 0) && !fullAssistantText.includes('### 📋 Completed Work Summary')) {
+      if ((filesCreated.length > 0 || filesEdited.length > 0 || commandsRun.length > 0 || memoriesSaved.length > 0 || subagentsRun.length > 0) && !fullAssistantText.includes('### 📋 Completed Work Summary')) {
         let summaryCard = '\n\n---\n### 📋 Completed Work Summary\n'
         if (filesCreated.length > 0) {
           summaryCard += `* **Files Created:** ${filesCreated.map(f => `\`${f}\``).join(', ')}\n`
@@ -476,10 +570,13 @@ AUTONOMOUS EXECUTION PRINCIPLES:
         if (commandsRun.length > 0) {
           summaryCard += `* **Commands Executed:** ${commandsRun.slice(-3).map(c => `\`${c}\``).join(', ')}\n`
         }
-        if (scheduledTasks.length > 0) {
-          summaryCard += `* **Scheduled Tasks:** ${scheduledTasks.map(t => `\`${t}\``).join(', ')}\n`
+        if (memoriesSaved.length > 0) {
+          summaryCard += `* **Memories Recorded:** ${memoriesSaved.map(m => `\`${m}\``).join(', ')}\n`
         }
-        summaryCard += `\n**Suggested Next Steps:** \`/test\` · \`/review\` · \`/extend\` · \`/summary\`\n`
+        if (subagentsRun.length > 0) {
+          summaryCard += `* **Subagents Executed:** ${subagentsRun.map(s => `\`${s}\``).join(', ')}\n`
+        }
+        summaryCard += `\n**Suggested Next Steps:** \`/test\` · \`/review\` · \`/extend\` · \`/summary\` · \`/compact\`\n`
 
         fullAssistantText += summaryCard
         resolvedParts.push({ type: 'text', text: summaryCard })

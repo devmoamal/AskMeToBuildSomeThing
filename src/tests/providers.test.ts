@@ -269,4 +269,172 @@ describe('Provider Adapters', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  it('should aggregate consecutive tool results into a single user message in Anthropic adapter', async () => {
+    const originalFetch = globalThis.fetch
+    let capturedBody: any = null
+
+    try {
+      globalThis.fetch = (async (_url: any, options: any) => {
+        if (options?.body) {
+          capturedBody = JSON.parse(options.body)
+        }
+        return new Response('event: message_stop\ndata: {"type":"message_stop"}\n\n', {
+          headers: { 'Content-Type': 'text/event-stream' }
+        })
+      }) as any
+
+      const adapter = ProviderAdapterFactory.getAdapter('anthropic')
+      const generator = adapter.streamChat({
+        config: {
+          id: 'p_claude',
+          name: 'Anthropic',
+          type: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          apiKey: 'sk-ant-test',
+          models: ['claude-3-5-sonnet-20241022'],
+          isDefault: true,
+          createdAt: Date.now()
+        },
+        model: 'claude-3-5-sonnet-20241022',
+        messages: [
+          { role: 'user', content: 'Explore project' },
+          {
+            role: 'assistant',
+            content: 'Checking files...',
+            toolCalls: [
+              { id: 'call_1', toolName: 'list_dir', args: { path: '.' }, status: 'completed' },
+              { id: 'call_2', toolName: 'read_file', args: { path: 'README.md' }, status: 'completed' }
+            ]
+          },
+          { role: 'tool', toolCallId: 'call_1', content: 'file list' },
+          { role: 'tool', toolCallId: 'call_2', content: '# Readme' }
+        ]
+      })
+
+      for await (const _ of generator) {}
+
+      expect(capturedBody).toBeDefined()
+      // Messages should be: 1. User, 2. Assistant, 3. User (containing BOTH tool_result blocks)
+      expect(capturedBody.messages.length).toBe(3)
+      expect(capturedBody.messages[0].role).toBe('user')
+      expect(capturedBody.messages[1].role).toBe('assistant')
+      expect(capturedBody.messages[2].role).toBe('user')
+      expect(Array.isArray(capturedBody.messages[2].content)).toBe(true)
+      expect(capturedBody.messages[2].content.length).toBe(2)
+      expect(capturedBody.messages[2].content[0].type).toBe('tool_result')
+      expect(capturedBody.messages[2].content[0].tool_use_id).toBe('call_1')
+      expect(capturedBody.messages[2].content[1].type).toBe('tool_result')
+      expect(capturedBody.messages[2].content[1].tool_use_id).toBe('call_2')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('should format multimodal images correctly in Anthropic adapter', async () => {
+    const originalFetch = globalThis.fetch
+    let capturedBody: any = null
+
+    globalThis.fetch = (async (_url: string, options: any) => {
+      if (options?.body) {
+        capturedBody = JSON.parse(options.body)
+      }
+      return new Response('event: message_stop\ndata: {"type":"message_stop"}\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' }
+      })
+    }) as any
+
+    try {
+      const adapter = ProviderAdapterFactory.getAdapter('anthropic')
+      const generator = adapter.streamChat({
+        config: {
+          id: 'p_claude',
+          name: 'Anthropic',
+          type: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          apiKey: 'sk-ant-test',
+          models: ['claude-3-5-sonnet-20241022'],
+          isDefault: true,
+          createdAt: Date.now()
+        },
+        model: 'claude-3-5-sonnet-20241022',
+        messages: [
+          {
+            role: 'user',
+            content: 'Check this diagram',
+            images: [
+              { mediaType: 'image/webp', base64: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v39gAA=' }
+            ]
+          }
+        ]
+      })
+
+      for await (const _ of generator) {}
+
+      expect(capturedBody).toBeDefined()
+      expect(capturedBody.messages.length).toBe(1)
+      expect(capturedBody.messages[0].role).toBe('user')
+      expect(Array.isArray(capturedBody.messages[0].content)).toBe(true)
+      expect(capturedBody.messages[0].content[0].type).toBe('image')
+      expect(capturedBody.messages[0].content[0].source.type).toBe('base64')
+      expect(capturedBody.messages[0].content[0].source.media_type).toBe('image/webp')
+      expect(capturedBody.messages[0].content[1].type).toBe('text')
+      expect(capturedBody.messages[0].content[1].text).toBe('Check this diagram')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('should format multimodal images correctly in OpenAI adapter', async () => {
+    const originalFetch = globalThis.fetch
+    let capturedBody: any = null
+
+    globalThis.fetch = (async (_url: string, options: any) => {
+      if (options?.body) {
+        capturedBody = JSON.parse(options.body)
+      }
+      return new Response('data: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' }
+      })
+    }) as any
+
+    try {
+      const adapter = ProviderAdapterFactory.getAdapter('openai')
+      const generator = adapter.streamChat({
+        config: {
+          id: 'p_openai',
+          name: 'OpenAI',
+          type: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'sk-proj-test',
+          models: ['gpt-4o'],
+          isDefault: true,
+          createdAt: Date.now()
+        },
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'user',
+            content: 'Analyze this UI screenshot',
+            images: [
+              { mediaType: 'image/png', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' }
+            ]
+          }
+        ]
+      })
+
+      for await (const _ of generator) {}
+
+      expect(capturedBody).toBeDefined()
+      expect(capturedBody.messages.length).toBe(1)
+      expect(capturedBody.messages[0].role).toBe('user')
+      expect(Array.isArray(capturedBody.messages[0].content)).toBe(true)
+      expect(capturedBody.messages[0].content[0].type).toBe('text')
+      expect(capturedBody.messages[0].content[0].text).toBe('Analyze this UI screenshot')
+      expect(capturedBody.messages[0].content[1].type).toBe('image_url')
+      expect(capturedBody.messages[0].content[1].image_url.url).toContain('data:image/png;base64,iVBOR')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

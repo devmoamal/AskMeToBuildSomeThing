@@ -319,6 +319,20 @@ export const dbQueries = {
     }))
   },
 
+  async getProjectSessionById(sessionId: string): Promise<ProjectSession | null> {
+    const db = getDb()
+    const rows = await db.select().from(projectSessionsTable)
+      .where(eq(projectSessionsTable.id, sessionId))
+    if (!rows[0]) return null
+    return {
+      id: rows[0].id,
+      projectId: rows[0].projectId,
+      title: rows[0].title,
+      createdAt: rows[0].createdAt,
+      updatedAt: rows[0].updatedAt
+    }
+  },
+
   async saveProjectSession(session: { id: string; projectId?: string; title: string }): Promise<ProjectSession> {
     const db = getDb()
     const now = Date.now()
@@ -365,27 +379,45 @@ export const dbQueries = {
       ? db.select().from(messagesTable).where(eq(messagesTable.projectSessionId, targetId)).orderBy(asc(messagesTable.createdAt))
       : db.select().from(messagesTable).where(eq(messagesTable.chatId, targetId)).orderBy(asc(messagesTable.createdAt))
     const rows = await query
-    return rows.map(r => ({
-      id: r.id,
-      chatId: r.chatId || undefined,
-      projectSessionId: r.projectSessionId || undefined,
-      role: r.role as any,
-      content: r.content,
-      toolCalls: r.toolCalls ? JSON.parse(r.toolCalls) : undefined,
-      parts: r.parts ? JSON.parse(r.parts) : undefined,
-      createdAt: r.createdAt
-    }))
+    return rows.map(r => {
+      const parts = r.parts ? JSON.parse(r.parts) : undefined
+      const images = parts?.filter((p: any) => p.type === 'image')?.map((p: any) => ({ mediaType: p.mediaType, base64: p.base64 }))
+      return {
+        id: r.id,
+        chatId: r.chatId || undefined,
+        projectSessionId: r.projectSessionId || undefined,
+        role: r.role as any,
+        content: r.content,
+        toolCalls: r.toolCalls ? JSON.parse(r.toolCalls) : undefined,
+        parts,
+        images: images && images.length > 0 ? images : undefined,
+        createdAt: r.createdAt
+      }
+    })
   },
 
   async saveMessage(msg: Message): Promise<void> {
     const db = getDb()
+    let finalParts = msg.parts
+    if (msg.images && msg.images.length > 0) {
+      const existingImageParts = finalParts?.filter(p => p.type === 'image') || []
+      if (existingImageParts.length === 0) {
+        const imgParts = msg.images.map(img => ({
+          type: 'image' as const,
+          mediaType: img.mediaType,
+          base64: img.base64
+        }))
+        finalParts = [...imgParts, ...(finalParts || [])]
+      }
+    }
+
     const existing = await db.select().from(messagesTable).where(eq(messagesTable.id, msg.id))
     if (existing[0]) {
       await db.update(messagesTable)
         .set({
           content: msg.content,
           toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
-          parts: msg.parts ? JSON.stringify(msg.parts) : null
+          parts: finalParts ? JSON.stringify(finalParts) : null
         })
         .where(eq(messagesTable.id, msg.id))
     } else {
@@ -396,7 +428,7 @@ export const dbQueries = {
         role: msg.role,
         content: msg.content,
         toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
-        parts: msg.parts ? JSON.stringify(msg.parts) : null,
+        parts: finalParts ? JSON.stringify(finalParts) : null,
         createdAt: msg.createdAt || Date.now()
       })
     }

@@ -81,7 +81,7 @@ export type ProjectMemory = {
   projectId: string
   key: string
   content: string
-  category: 'architecture' | 'decision' | 'gotcha' | 'preference'
+  category: 'architecture' | 'decision' | 'gotcha' | 'preference' | 'convention' | 'dependency' | 'general'
   updatedAt: number
 }
 
@@ -119,6 +119,7 @@ export type MessagePart =
   | { type: 'thinking'; text: string; isGenerating?: boolean }
   | { type: 'text'; text: string }
   | { type: 'tool_call'; toolCall: ToolCallRecord }
+  | { type: 'image'; mediaType: string; base64: string }
 
 export type Message = {
   id: string
@@ -126,6 +127,7 @@ export type Message = {
   projectSessionId?: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  images?: Array<{ mediaType: string; base64: string }>
   toolCalls?: ToolCallRecord[]
   parts?: MessagePart[]
   createdAt: number
@@ -152,11 +154,14 @@ export type AgentStreamEvent =
   | { type: 'pause_for_user'; questionnaire: QuestionnairePayload; toolCallId: string; targetId: string }
   | { type: 'canvas_created'; canvas: CanvasDocument; targetId: string }
   | { type: 'title_generated'; targetId: string; title: string }
+  | { type: 'compaction_done'; summary: string; targetId: string }
+  | { type: 'token_usage'; inputTokens: number; totalTokens: number; targetId: string }
   | { type: 'error'; error: string; targetId: string }
   | { type: 'done'; finalMessage: Message; targetId: string }
 
 export type SendPromptPayload = {
   mode: 'chat' | 'project'
+  executionMode?: 'plan' | 'build'
   targetId: string // chatId or projectSessionId
   projectFolder?: string
   prompt: string

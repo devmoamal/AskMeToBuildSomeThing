@@ -11,6 +11,8 @@ interface AppSidebarProps {
   projectSessions: ProjectSession[]
   activeSessionId: string | null
   generatingSessionIds?: Set<string>
+  sessionsByProject?: Record<string, ProjectSession[]>
+  onExpandProject?: (projectId: string) => void
   onSelectProject: (projectId: string) => void
   onSelectSession: (sessionId: string) => void
   onPickFolder: () => void
@@ -31,6 +33,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   projectSessions,
   activeSessionId,
   generatingSessionIds,
+  sessionsByProject,
+  onExpandProject,
   onSelectProject,
   onSelectSession,
   onPickFolder,
@@ -130,6 +134,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             sessions={projectSessions}
             activeSessionId={activeSessionId}
             generatingSessionIds={generatingSessionIds}
+            sessionsByProject={sessionsByProject}
+            onExpandProject={onExpandProject}
             onSelectProject={onSelectProject}
             onSelectSession={onSelectSession}
             onPickFolder={onPickFolder}

@@ -147,6 +147,8 @@ export const App: React.FC = () => {
         projects={store.projects}
         activeProjectId={store.activeProjectId}
         projectSessions={store.projectSessions}
+        sessionsByProject={store.sessionsByProject}
+        onExpandProject={store.loadSessionsForProject}
         activeSessionId={store.activeSessionId}
         generatingSessionIds={store.generatingSessionIds}
         onSelectProject={store.setActiveProjectId}
@@ -211,6 +213,7 @@ export const App: React.FC = () => {
           onPromptDraftConsumed={() => store.setPromptDraft(null)}
           isSidebarOpen={isSidebarEffectivelyOpen}
           onToggleSidebar={toggleSidebar}
+          tokenUsage={store.currentTokenUsage}
         />
       </main>
 

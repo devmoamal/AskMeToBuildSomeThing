@@ -45,6 +45,27 @@ export function registerProjectsIpc() {
     return null
   })
 
+  ipcMain.handle('projects:readImageAsBase64', async (_, filePath: string) => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    try {
+      const buf = await fs.readFile(filePath)
+      const ext = path.extname(filePath).toLowerCase().replace('.', '')
+      let mimeType = 'image/jpeg'
+      if (ext === 'png') mimeType = 'image/png'
+      else if (ext === 'webp') mimeType = 'image/webp'
+      else if (ext === 'gif') mimeType = 'image/gif'
+      else if (ext === 'svg') mimeType = 'image/svg+xml'
+      return {
+        mediaType: mimeType,
+        base64: buf.toString('base64'),
+        dataUrl: `data:${mimeType};base64,${buf.toString('base64')}`
+      }
+    } catch (err: any) {
+      throw new Error(`Failed to read image: ${err.message}`)
+    }
+  })
+
   ipcMain.handle('projects:readFile', async (_, filePath: string) => {
     const fs = await import('node:fs/promises')
     try {

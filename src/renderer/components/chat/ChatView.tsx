@@ -51,6 +51,7 @@ interface ChatViewProps {
   onPromptDraftConsumed?: () => void
   isSidebarOpen: boolean
   onToggleSidebar: () => void
+  tokenUsage?: { inputTokens: number; totalTokens: number } | null
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -84,7 +85,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   promptDraft,
   onPromptDraftConsumed,
   isSidebarOpen,
-  onToggleSidebar
+  onToggleSidebar,
+  tokenUsage
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -236,6 +238,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             onAbort={onAbort}
             promptDraft={promptDraft}
             onPromptDraftConsumed={onPromptDraftConsumed}
+            tokenUsage={tokenUsage}
             placeholder={
               mode === 'project'
                 ? 'Ask about this project, request code, or canvas notes...'

@@ -5,12 +5,17 @@ import { ModelSelector } from './ModelSelector'
 import { SlashCommandDropdown, SLASH_COMMANDS, type SlashCommandItem } from './SlashCommandDropdown'
 import type { ProviderConfig } from '../../../shared/types'
 import { cn } from '../../lib/utils'
+import { compressImage } from '../../lib/image-compressor'
 
 export interface AttachedFile {
   id: string
   name: string
-  path: string
+  path?: string
   isImage?: boolean
+  mediaType?: string
+  base64?: string
+  previewUrl?: string
+  savingsRatio?: number
 }
 
 interface ChatInputProps {
@@ -27,6 +32,7 @@ interface ChatInputProps {
   promptDraft?: string | null
   onPromptDraftConsumed?: () => void
   promptBar?: React.ReactNode
+  tokenUsage?: { inputTokens: number; totalTokens: number } | null
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -42,7 +48,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = 'Ask anything... (type / for canvas or commands)',
   promptDraft,
   onPromptDraftConsumed,
-  promptBar
+  promptBar,
+  tokenUsage
 }) => {
   const [text, setText] = useState('')
 
@@ -161,11 +168,79 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (!window.api?.projects?.pickImage) return
     const filePaths = await window.api.projects.pickImage()
     if (filePaths && filePaths.length > 0) {
-      const newItems: AttachedFile[] = filePaths.map(fp => {
-        const name = fp.split(/[\\/]/).pop() || 'image'
-        return { id: `att_${Date.now()}_${Math.random()}`, name, path: fp, isImage: true }
-      })
-      setAttachments(prev => [...prev, ...newItems])
+      for (const fp of filePaths) {
+        try {
+          const raw = await window.api.projects.readImageAsBase64(fp)
+          const compressed = await compressImage(raw.dataUrl)
+          const name = fp.split(/[\\/]/).pop() || 'image'
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              name,
+              path: fp,
+              isImage: true,
+              mediaType: compressed.mediaType,
+              base64: compressed.base64,
+              previewUrl: compressed.dataUrl,
+              savingsRatio: compressed.savingsRatio
+            }
+          ])
+        } catch (err) {
+          console.error('Failed to compress picked image', err)
+          const name = fp.split(/[\\/]/).pop() || 'image'
+          setAttachments(prev => [
+            ...prev,
+            { id: `att_${Date.now()}_${Math.random()}`, name, path: fp, isImage: true }
+          ])
+        }
+      }
+    }
+  }
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items || items.length === 0) return
+
+    const imageItems: File[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          imageItems.push(file)
+        }
+      }
+    }
+
+    if (imageItems.length > 0) {
+      // If paste contains only images (e.g. screenshot), prevent raw insertion
+      const textData = e.clipboardData.getData('text/plain')
+      if (!textData) {
+        e.preventDefault()
+      }
+
+      for (const file of imageItems) {
+        try {
+          const compressed = await compressImage(file)
+          const timestamp = new Date().toISOString().slice(11, 19).replace(/:/g, '-')
+          const name = file.name && file.name !== 'image.png' ? file.name : `screenshot-${timestamp}.png`
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `att_paste_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              name,
+              isImage: true,
+              mediaType: compressed.mediaType,
+              base64: compressed.base64,
+              previewUrl: compressed.dataUrl,
+              savingsRatio: compressed.savingsRatio
+            }
+          ])
+        } catch (err) {
+          console.error('Failed to compress clipboard image', err)
+        }
+      }
     }
   }
 
@@ -210,14 +285,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               {attachments.map((att) => (
                 <div
                   key={att.id}
-                  className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60 max-w-[220px]"
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60 max-w-[260px]"
                 >
-                  {att.isImage ? (
-                    <Image className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                  {att.previewUrl ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      className="w-4 h-4 rounded-xs object-cover shrink-0 border border-zinc-700/50"
+                    />
+                  ) : att.isImage ? (
+                    <Image className="w-3.5 h-3.5 shrink-0 text-amber-400" />
                   ) : (
-                    <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                    <FileText className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
                   )}
                   <span className="truncate flex-1 font-mono text-[11px]">{att.name}</span>
+                  {att.savingsRatio !== undefined && att.savingsRatio > 0 && (
+                    <span
+                      title={`Compressed to WebP/JPEG saving ~${att.savingsRatio}% size/tokens`}
+                      className="text-[9px] px-1 py-0.2 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/40 font-mono shrink-0"
+                    >
+                      -{att.savingsRatio}%
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRemoveAttachment(att.id)}
@@ -237,6 +326,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={isPromptActive}
             placeholder={isPromptActive ? 'Respond to the prompt above to continue...' : placeholder}
             className={cn(
@@ -318,6 +408,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 selectedModel={selectedModel}
                 onSelectModel={onSelectModel}
               />
+
+              {/* Plan Mode Badge */}
+              {text.trim().startsWith('/plan') && (
+                <span className="text-[10px] font-medium text-amber-400 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded shadow-xs">
+                  PLAN MODE
+                </span>
+              )}
+
+              {/* Token Usage Badge */}
+              {tokenUsage && tokenUsage.totalTokens > 0 && (
+                <span
+                  className="hidden sm:inline-block text-[10px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800/80 px-1.5 py-0.5 rounded"
+                  title={`Active session context: ~${tokenUsage.totalTokens.toLocaleString()} tokens`}
+                >
+                  ~{tokenUsage.totalTokens > 1000 ? `${(tokenUsage.totalTokens / 1000).toFixed(1)}k` : tokenUsage.totalTokens} tok
+                </span>
+              )}
             </div>
 
           {/* Send / Stop Button */}

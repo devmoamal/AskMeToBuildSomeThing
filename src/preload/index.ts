@@ -41,6 +41,7 @@ const api: ElectronAPI = {
     pickFolder: () => ipcRenderer.invoke('projects:pickFolder'),
     pickFile: () => ipcRenderer.invoke('projects:pickFile'),
     pickImage: () => ipcRenderer.invoke('projects:pickImage'),
+    readImageAsBase64: (filePath: string) => ipcRenderer.invoke('projects:readImageAsBase64', filePath),
     readFile: (filePath: string) => ipcRenderer.invoke('projects:readFile', filePath),
     getSessions: (projectId: string) => ipcRenderer.invoke('projects:getSessions', projectId),
     saveSession: (session) => ipcRenderer.invoke('projects:saveSession', session),

@@ -20,10 +20,10 @@ describe('Tool Registry and Scopes', () => {
     expect(toolNames).not.toContain('use_terminal')
   })
 
-  it('should allow all 13 tools in project mode', () => {
+  it('should allow all 17 tools in project mode', () => {
     const projectTools = ToolRegistry.getToolsForMode('project')
     const toolNames = projectTools.map(t => t.name)
-    expect(toolNames).toHaveLength(13)
+    expect(toolNames).toHaveLength(17)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('create_file')
     expect(toolNames).toContain('edit_file')
@@ -31,6 +31,10 @@ describe('Tool Registry and Scopes', () => {
     expect(toolNames).toContain('list_dir')
     expect(toolNames).toContain('find_files')
     expect(toolNames).toContain('search_code')
+    expect(toolNames).toContain('get_file_outline')
+    expect(toolNames).toContain('git_status')
+    expect(toolNames).toContain('manage_memory')
+    expect(toolNames).toContain('task')
     expect(toolNames).toContain('make_canvas')
     expect(toolNames).toContain('ask_user')
     expect(toolNames).toContain('web_search')

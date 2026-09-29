@@ -50,6 +50,7 @@ export interface ElectronAPI {
     pickFolder: () => Promise<string | null>
     pickFile: () => Promise<string[] | null>
     pickImage: () => Promise<string[] | null>
+    readImageAsBase64: (filePath: string) => Promise<{ mediaType: string; base64: string; dataUrl: string }>
     readFile: (filePath: string) => Promise<string>
     getSessions: (projectId: string) => Promise<ProjectSession[]>
     saveSession: (session: { id: string; projectId: string; title: string }) => Promise<ProjectSession>

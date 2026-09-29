@@ -21,6 +21,8 @@ interface ProjectsTabProps {
   sessions: ProjectSession[]
   activeSessionId: string | null
   generatingSessionIds?: Set<string>
+  sessionsByProject?: Record<string, ProjectSession[]>
+  onExpandProject?: (projectId: string) => void
   onSelectProject: (projectId: string) => void
   onSelectSession: (sessionId: string) => void
   onPickFolder: () => void
@@ -36,6 +38,8 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
   sessions,
   activeSessionId,
   generatingSessionIds,
+  sessionsByProject,
+  onExpandProject,
   onSelectProject,
   onSelectSession,
   onPickFolder,
@@ -59,10 +63,16 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
   useClickOutside(sessionMenuRef, () => setSessionMenuId(null), Boolean(sessionMenuId))
 
   const toggleProject = (projectId: string) => {
-    setCollapsedProjects(prev => ({
-      ...prev,
-      [projectId]: !prev[projectId]
-    }))
+    setCollapsedProjects(prev => {
+      const willBeOpen = !prev[projectId]
+      if (willBeOpen && onExpandProject) {
+        onExpandProject(projectId)
+      }
+      return {
+        ...prev,
+        [projectId]: willBeOpen
+      }
+    })
   }
 
   const startRename = (sess: ProjectSession) => {
@@ -86,7 +96,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
 
   const isNoProjectActive = activeProjectId === '__no_project__' || !activeProjectId
   const isNoProjectCollapsed = !!collapsedProjects['__no_project__']
-  const noProjectSessions = isNoProjectActive ? sessions : []
+  const noProjectSessions = sessionsByProject?.['__no_project__'] || (isNoProjectActive ? sessions : [])
 
   const renderSessionItem = (sess: ProjectSession, projId: string) => {
     const isSessionActive = activeSessionId === sess.id
@@ -286,7 +296,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
           </div>
 
           {/* Sessions under No Project */}
-          {!isNoProjectCollapsed && isNoProjectActive && (
+          {!isNoProjectCollapsed && (
             <div className="pl-3 space-y-0.5 my-0.5">
               {noProjectSessions.map(sess => renderSessionItem(sess, '__no_project__'))}
               {noProjectSessions.length === 0 && (
@@ -302,7 +312,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
         {filteredProjects.map(proj => {
           const isCollapsed = !!collapsedProjects[proj.id]
           const isProjectActive = activeProjectId === proj.id
-          const projectSessions = isProjectActive ? sessions : []
+          const projectSessions = sessionsByProject?.[proj.id] || (isProjectActive ? sessions : [])
 
           return (
             <div key={proj.id} className="space-y-0.5 mb-0.5">
@@ -410,7 +420,7 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
               </div>
 
               {/* Nested Project Sessions */}
-              {!isCollapsed && isProjectActive && (
+              {!isCollapsed && (
                 <div className="pl-3 space-y-0.5 my-0.5">
                   {projectSessions.map(sess => renderSessionItem(sess, proj.id))}
                   {projectSessions.length === 0 && (

@@ -12,6 +12,7 @@ import type {
   MessagePart
 } from '../../shared/types'
 import type { QuestionnairePayload } from '../../shared/schemas'
+import { compressImage } from '../lib/image-compressor'
 
 export function useAppStore() {
   const [activeTab, setActiveTab] = useState<'chats' | 'projects'>('projects')
@@ -22,7 +23,22 @@ export function useAppStore() {
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string>('__no_project__')
   const [projectSessions, setProjectSessions] = useState<ProjectSession[]>([])
+  const [sessionsByProject, setSessionsByProject] = useState<Record<string, ProjectSession[]>>({})
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  const loadSessionsForProject = useCallback(async (projId: string) => {
+    if (!window.api?.projects?.getSessions) return []
+    try {
+      const sess = await window.api.projects.getSessions(projId)
+      setSessionsByProject(prev => ({
+        ...prev,
+        [projId]: sess
+      }))
+      return sess
+    } catch {
+      return []
+    }
+  }, [])
 
   const [messages, setMessages] = useState<Message[]>([])
   const [canvases, setCanvases] = useState<CanvasDocument[]>([])
@@ -44,6 +60,7 @@ export function useAppStore() {
   }, [generatingSessionIds])
 
   const [selectedModels, setSelectedModels] = useState<Record<string, { providerId: string; model: string }>>({})
+  const [tokenUsages, setTokenUsages] = useState<Record<string, { inputTokens: number; totalTokens: number }>>({})
   const [activeQuestionnaires, setActiveQuestionnaires] = useState<Record<string, {
     toolCallId: string
     payload: QuestionnairePayload
@@ -57,6 +74,7 @@ export function useAppStore() {
   const isGenerating = Boolean(activeSessionId && generatingSessionIds.has(activeSessionId))
   const activeQuestionnaire = activeSessionId ? (activeQuestionnaires[activeSessionId] || null) : null
   const activeApproval = activeSessionId ? (activeApprovals[activeSessionId] || null) : null
+  const currentTokenUsage = activeSessionId ? (tokenUsages[activeSessionId] || null) : null
 
   const activeSessionIdRef = useRef<string | null>(activeSessionId)
   useEffect(() => {
@@ -109,10 +127,14 @@ export function useAppStore() {
         isInitializedRef.current = true
         setActiveProjectId('__no_project__')
       }
+
+      // Prefetch sessions for No Project and all projects
+      loadSessionsForProject('__no_project__')
+      fetchedProjects.forEach(p => loadSessionsForProject(p.id))
     } catch (e) {
       console.error('Error loading initial app state:', e)
     }
-  }, [])
+  }, [loadSessionsForProject])
 
   useEffect(() => {
     loadState()
@@ -121,16 +143,16 @@ export function useAppStore() {
   // Load sessions when active project changes
   useEffect(() => {
     if (activeProjectId && window.api) {
-      window.api.projects.getSessions(activeProjectId).then((sessions) => {
+      loadSessionsForProject(activeProjectId).then((sessions) => {
         setProjectSessions(sessions)
         if (sessions.length > 0) {
-          setActiveSessionId(sessions[0].id)
+          setActiveSessionId(prev => (prev && sessions.some(s => s.id === prev) ? prev : sessions[0].id))
         } else {
           setActiveSessionId(null)
         }
       })
     }
-  }, [activeProjectId])
+  }, [activeProjectId, loadSessionsForProject])
 
   // Load messages and canvases when active thread changes
   useEffect(() => {
@@ -359,6 +381,15 @@ export function useAppStore() {
         }
       } else if (event.type === 'title_generated') {
         setProjectSessions(prev => prev.map(s => s.id === event.targetId ? { ...s, title: event.title } : s))
+      } else if (event.type === 'token_usage') {
+        setTokenUsages(prev => ({
+          ...prev,
+          [targetId]: { inputTokens: event.inputTokens, totalTokens: event.totalTokens }
+        }))
+      } else if (event.type === 'compaction_done') {
+        if (targetId === activeSessionIdRef.current) {
+          window.api.projects.getMessages(targetId).then(setMessages)
+        }
       } else if (event.type === 'done') {
         setGeneratingSessionIds(prev => {
           const next = new Set(prev)
@@ -476,7 +507,15 @@ export function useAppStore() {
 
   const sendPrompt = async (
     text: string,
-    attachments?: Array<{ name: string; path: string; isImage?: boolean }>
+    attachments?: Array<{
+      name: string
+      path?: string
+      isImage?: boolean
+      mediaType?: string
+      base64?: string
+      previewUrl?: string
+      savingsRatio?: number
+    }>
   ) => {
     let targetId = activeSessionId
 
@@ -527,10 +566,24 @@ export function useAppStore() {
     const finalModel = currentThreadModel?.model || finalProvider.defaultModel || (finalProvider.models?.[0]) || 'default'
 
     let fullPrompt = text
+    const images: Array<{ mediaType: string; base64: string }> = []
+
     if (attachments && attachments.length > 0) {
       const fileContexts: string[] = []
       for (const att of attachments) {
-        if (!att.isImage) {
+        if (att.isImage) {
+          if (att.base64 && att.mediaType) {
+            images.push({ mediaType: att.mediaType, base64: att.base64 })
+          } else if (att.path && window.api?.projects?.readImageAsBase64) {
+            try {
+              const raw = await window.api.projects.readImageAsBase64(att.path)
+              const compressed = await compressImage(raw.dataUrl)
+              images.push({ mediaType: compressed.mediaType, base64: compressed.base64 })
+            } catch (err) {
+              console.error('Failed to read image attachment', err)
+            }
+          }
+        } else if (att.path) {
           try {
             const content = await window.api.projects.readFile(att.path)
             fileContexts.push(`--- File: ${att.name} ---\n${content}\n--- End of File ---`)
@@ -549,7 +602,8 @@ export function useAppStore() {
       id: `msg_opt_${Date.now()}`,
       projectSessionId: targetId,
       role: 'user',
-      content: text || (attachments ? `[Attached ${attachments.length} file(s)]` : ''),
+      content: text || (attachments ? `[Attached ${attachments.length} item(s)]` : ''),
+      images: images.length > 0 ? images : undefined,
       createdAt: Date.now()
     }
 
@@ -570,14 +624,17 @@ export function useAppStore() {
 
     const isNoProj = !activeProjectId || activeProjectId === '__no_project__'
     const activeProj = isNoProj ? null : projects.find(p => p.id === activeProjectId)
+    const isPlan = fullPrompt.trim().startsWith('/plan')
 
     await window.api.agent.sendPrompt({
       mode: isNoProj ? 'chat' : 'project',
+      executionMode: isPlan ? 'plan' : 'build',
       targetId,
       projectFolder: activeProj?.folderPath,
       prompt: fullPrompt,
       providerId: finalProvider.id,
-      model: finalModel
+      model: finalModel,
+      images: images.length > 0 ? images : undefined
     })
   }
 
@@ -724,6 +781,8 @@ export function useAppStore() {
     activeProjectId,
     setActiveProjectId,
     projectSessions,
+    sessionsByProject,
+    loadSessionsForProject,
     activeSessionId,
     setActiveSessionId,
     messages,
@@ -760,6 +819,8 @@ export function useAppStore() {
     promptDraft,
     setPromptDraft,
     rollbackToMessage,
+    currentTokenUsage,
+    tokenUsages,
     refreshState: loadState
   }
 }
