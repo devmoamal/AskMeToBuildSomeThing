@@ -10,7 +10,10 @@ import {
   Code,
   TestTube,
   GitBranch,
-  Sliders
+  Sliders,
+  CheckCircle2,
+  History,
+  GitCompare
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -87,6 +90,24 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
     label: '/skills',
     description: 'Inspect and configure specialized agent skills and behaviors',
     icon: Sliders
+  },
+  {
+    command: '/diagnostics',
+    label: '/diagnostics',
+    description: 'Run compiler, TypeScript & linter diagnostics on modified code',
+    icon: CheckCircle2
+  },
+  {
+    command: '/checkpoint',
+    label: '/checkpoint',
+    description: 'Manage git safety snapshots, list checkpoints, or restore state',
+    icon: History
+  },
+  {
+    command: '/diff',
+    label: '/diff',
+    description: 'Inspect active working tree git changes and uncommitted diffs',
+    icon: GitCompare
   }
 ]
 

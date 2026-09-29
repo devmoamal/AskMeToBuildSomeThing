@@ -16,6 +16,9 @@ import { manageMemoryTool } from './manage-memory'
 import { getFileOutlineTool } from './get-file-outline'
 import { gitStatusTool } from './git-status'
 import { taskTool } from './task'
+import { checkDiagnosticsTool } from './check-diagnostics'
+import { searchSymbolsTool } from './search-symbols'
+import { manageCheckpointsTool } from './manage-checkpoints'
 import { InvalidArgumentsError } from './errors'
 import { TruncateService } from './truncate'
 
@@ -27,8 +30,11 @@ export const allTools: AgentTool[] = [
   listDirTool,
   findFilesTool,
   searchCodeTool,
+  searchSymbolsTool,
   getFileOutlineTool,
   gitStatusTool,
+  checkDiagnosticsTool,
+  manageCheckpointsTool,
   manageMemoryTool,
   taskTool,
   canvasTool,

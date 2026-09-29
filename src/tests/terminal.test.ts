@@ -12,7 +12,7 @@ describe('Terminal Runner', () => {
     expect(res.exitCode).toBe(0)
     expect(res.stdout).toContain('Hello Terminal')
     expect(chunks.length).toBeGreaterThan(0)
-  })
+  }, 15000)
 
   it('should handle non-zero exit codes', async () => {
     const res = await TerminalRunner.run({

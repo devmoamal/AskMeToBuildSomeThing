@@ -108,4 +108,12 @@ export function registerProjectsIpc() {
       deleteTargetMessage: payload.deleteTargetMessage
     })
   })
+
+  ipcMain.handle('projects:saveFile', async (_, { filePath, content }: { filePath: string; content: string }) => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+    await fs.writeFile(filePath, content, 'utf-8')
+    return { success: true, filePath }
+  })
 }

@@ -48,7 +48,8 @@ const api: ElectronAPI = {
     deleteSession: (id: string) => ipcRenderer.invoke('projects:deleteSession', id),
     getMessages: (sessionId: string) => ipcRenderer.invoke('projects:getMessages', sessionId),
     getCanvases: (sessionId: string) => ipcRenderer.invoke('projects:getCanvases', sessionId),
-    rollback: (payload) => ipcRenderer.invoke('projects:rollback', payload)
+    rollback: (payload) => ipcRenderer.invoke('projects:rollback', payload),
+    saveFile: (filePath: string, content: string) => ipcRenderer.invoke('projects:saveFile', { filePath, content })
   },
   agent: {
     sendPrompt: (payload: SendPromptPayload) => ipcRenderer.invoke('agent:sendPrompt', payload),

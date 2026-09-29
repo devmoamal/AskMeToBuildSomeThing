@@ -58,6 +58,7 @@ export interface ElectronAPI {
     getMessages: (sessionId: string) => Promise<Message[]>
     getCanvases: (sessionId: string) => Promise<CanvasDocument[]>
     rollback: (payload: { sessionId: string; messageId: string; deleteTargetMessage?: boolean }) => Promise<{ deletedMessageIds: string[]; remainingMessages: Message[] }>
+    saveFile: (filePath: string, content: string) => Promise<{ success: boolean; filePath: string }>
   }
   agent: {
     sendPrompt: (payload: SendPromptPayload) => Promise<void>

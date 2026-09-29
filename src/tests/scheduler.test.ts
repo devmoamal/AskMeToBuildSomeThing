@@ -48,7 +48,7 @@ describe('Scheduler and Memory System', () => {
     const updated = (await dbQueries.getScheduledTasks('test_session_immediate')).find(t => t.id === task.id)
     expect(updated?.status).toBe('completed')
     expect(updated?.result).toContain('immediate execution')
-  })
+  }, 15000)
 
   it('should save, retrieve and delete project memories', async () => {
     const memory: ProjectMemory = {

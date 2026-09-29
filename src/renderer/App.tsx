@@ -4,6 +4,7 @@ import { AppSidebar } from './components/sidebar/AppSidebar'
 import { ChatView } from './components/chat/ChatView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { OnboardingModal } from './components/onboarding/OnboardingModal'
+import { CanvasModal } from './components/canvas/CanvasModal'
 import { Sparkles, X, Download, RefreshCw, AlertCircle, ArrowUpCircle } from 'lucide-react'
 import type { UpdateInfo, UpdateProgress } from '../shared/types'
 
@@ -248,6 +249,23 @@ export const App: React.FC = () => {
           store.refreshState()
         }}
       />
+
+      {/* Expanded Canvas Modal (Split View, Live Sandbox, Workspace Direct Export) */}
+      {store.activeCanvasModal && (
+        <CanvasModal
+          canvas={store.activeCanvasModal}
+          onClose={() => store.setActiveCanvasModal(null)}
+          onSave={async (canvas) => {
+            const saved = await window.api.canvases.save(canvas)
+            store.setActiveCanvasModal(saved)
+            if (store.activeCanvas?.id === saved.id) {
+              store.setActiveCanvas(saved)
+            }
+            store.refreshState()
+          }}
+          activeProjectFolder={store.projects.find(p => p.id === store.activeProjectId)?.folderPath}
+        />
+      )}
 
       {/* Background Update Notification Toast / In-Place Updater */}
       {availableUpdate && (

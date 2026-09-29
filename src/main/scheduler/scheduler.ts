@@ -92,9 +92,15 @@ export class SchedulerManager {
 
   static async executeTask(taskId: string) {
     try {
+      // Clear active timer if present to prevent duplicate runs
+      if (this.activeTimers.has(taskId)) {
+        clearTimeout(this.activeTimers.get(taskId)!)
+        this.activeTimers.delete(taskId)
+      }
+
       const tasks = await dbQueries.getScheduledTasks()
       const task = tasks.find(t => t.id === taskId)
-      if (!task || task.status === 'cancelled') return
+      if (!task || task.status === 'cancelled' || task.status === 'running' || task.status === 'completed') return
 
       await dbQueries.updateScheduledTask(taskId, { status: 'running' })
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { FileCode, Copy, Check, Save, Eye, Edit3, X, Maximize2, Minimize2, Columns, Play, Download } from 'lucide-react'
+import { FileCode, Copy, Check, Save, Eye, Edit3, X, Maximize2, Minimize2, Columns, Play, Download, FolderDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { CanvasDocument } from '../../../shared/types'
@@ -11,9 +11,10 @@ interface CanvasModalProps {
   canvas: CanvasDocument | null
   onClose: () => void
   onSave?: (canvas: CanvasDocument) => void
+  activeProjectFolder?: string
 }
 
-export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSave }) => {
+export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSave, activeProjectFolder }) => {
   if (!canvas) return null
 
   const [activeTab, setActiveTab] = useState<'preview' | 'split' | 'sandbox' | 'edit'>('preview')
@@ -21,10 +22,16 @@ export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSav
   const [title, setTitle] = useState(canvas.title)
   const [copied, setCopied] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportPath, setExportPath] = useState('')
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null)
 
   useEffect(() => {
     setContent(canvas.content)
     setTitle(canvas.title)
+    const isHtml = canvas.content.trim().startsWith('<!DOCTYPE') || canvas.content.trim().startsWith('<html')
+    const ext = isHtml ? '.html' : '.md'
+    setExportPath(`docs/${canvas.title.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}${ext}`)
   }, [canvas])
 
   const handleCopy = () => {
@@ -43,6 +50,25 @@ export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSav
     a.download = `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleExportToWorkspace = async () => {
+    if (!exportPath.trim()) return
+    const targetFolder = activeProjectFolder || '.'
+    const fullPath = targetFolder === '.' ? exportPath.trim() : `${targetFolder.replace(/[/\\]+$/, '')}/${exportPath.trim().replace(/^[/\\]+/, '')}`
+
+    try {
+      if (window.api?.projects?.saveFile) {
+        await window.api.projects.saveFile(fullPath, content)
+        setExportFeedback(`✓ Saved to ${exportPath}`)
+        setTimeout(() => {
+          setExportFeedback(null)
+          setIsExporting(false)
+        }, 2500)
+      }
+    } catch (err: any) {
+      setExportFeedback(`Failed: ${err.message}`)
+    }
   }
 
   const handleSave = () => {
@@ -156,6 +182,20 @@ export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSav
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setIsExporting(!isExporting)}
+              title="Save directly into active project workspace"
+              className={cn(
+                "h-8 text-xs gap-1 transition-colors",
+                isExporting ? "bg-primary/20 text-primary border-primary/50" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <FolderDown className="w-3.5 h-3.5" />
+              <span>Export</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleDownload}
               title="Download Document"
               className="h-8 text-xs gap-1 text-muted-foreground hover:text-foreground"
@@ -189,6 +229,33 @@ export const CanvasModal: React.FC<CanvasModalProps> = ({ canvas, onClose, onSav
             </button>
           </div>
         </div>
+
+        {/* Inline Workspace Export Bar */}
+        {isExporting && (
+          <div className="flex items-center gap-3 px-5 py-2.5 bg-muted/60 border-b border-border/80 text-xs animate-in slide-in-from-top-1">
+            <FolderDown className="w-4 h-4 text-primary shrink-0" />
+            <span className="text-muted-foreground shrink-0 font-medium">Export relative path:</span>
+            <input
+              type="text"
+              value={exportPath}
+              onChange={(e) => setExportPath(e.target.value)}
+              placeholder="docs/feature-guide.md"
+              className="flex-1 px-2.5 py-1 bg-background border border-border rounded-md text-xs font-mono text-foreground focus:outline-none focus:border-primary"
+            />
+            <Button
+              size="sm"
+              onClick={handleExportToWorkspace}
+              className="h-7 px-3 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              Save to Workspace
+            </Button>
+            {exportFeedback && (
+              <span className="text-[11px] font-medium text-emerald-400 animate-in fade-in">
+                {exportFeedback}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Modal Body */}
         <div className="flex-1 overflow-hidden flex flex-col">

@@ -70,22 +70,26 @@ flowchart TD
 - **Chats Slide Tab**: Create, organize, and collapse chats into user-defined folder groups. Safe conversational sandbox without filesystem or shell access.
 - **Projects Slide Tab**: Connect any folder on your device via native OS folder picker. Creates persistent multi-session threads tied directly to that directory.
 
-### 2. The Iron Brain Context & Resilience Engine (v1.1.0)
+### 2. The Iron Brain Context & Resilience Engine (v1.2.0)
 - **Two-Phase Compaction**: Passive tool result pruning (`[Tool result cleared]`) saves 80%+ tokens on long runs, coupled with structured 5-section anchor compaction (`Objective`, `Important Details`, `Work State`, `Next Move`, `Relevant Files`) so the agent never forgets architectural decisions.
 - **Managed Tool Spillover (Truncation)**: High-volume tool outputs (large terminal logs, file dumps) are safely bounded to 2,000 lines / 50KB and persisted to `.data/tool_outputs/tool_*.log` with interactive file links.
 - **Self-Healing Tool Validation**: Catches model argument schema errors with `InvalidArgumentsError`, giving the model actionable instructions to self-correct its arguments automatically.
 - **Real-Time Token Usage HUD**: Live token usage counter displayed in the chat input bar.
 
-### 3. Codebase Cartographer & Intelligence Tools
+### 3. Codebase Cartographer & Code Intelligence Tools (v1.2.0)
+- **Automated Diagnostics & Linting (`check_diagnostics`, `/diagnostics`)**: Runs TypeScript (`tsc --noEmit`), linter, and compiler checks to automatically catch syntax errors, broken imports, and type mismatches. Enables the agent to verify its code before completing work.
+- **Instant Codebase Symbol Search (`search_symbols`)**: Instantly locate where functions, classes, interfaces, types, and constants are defined across thousands of workspace files with zero token bloat.
+- **Git-Backed Checkpoints & Time Travel (`manage_checkpoints`, `/checkpoint`, `/diff`)**: Snapshot workspace state before risky multi-file edits. Inspect diffs and restore the working tree to any previous checkpoint with one command.
 - **AST Outline Inspector (`get_file_outline`)**: Extracts functions, classes, interfaces, and methods without reading massive files raw.
 - **Git Intelligence (`git_status`)**: Real-time git branch tracking, dirty file detection, and commit/diff inspection.
 - **Autonomous Project Memory (`manage_memory`)**: The agent records, retrieves, and updates architectural patterns and conventions across sessions.
 - **Subagent Swarm (`task`)**: Delegate specialized exploration, review, or testing tasks to focused subagents returning structured results.
 
-### 4. Typeset Markdown Canvas 2.0 (/canvas)
+### 4. Typeset Markdown Canvas 2.0 & Workspace Direct Export (/canvas)
 - Type `/canvas` into the chat input to invoke autocomplete.
 - **Split View**: Raw Markdown Editor on the left with live synchronized typeset preview on the right.
 - **Live Sandbox Preview**: Interactive sandboxed HTML iframe preview for web apps, Canvas games, and rich UI mockups.
+- **Workspace Direct Export**: Save canvas documents directly into the active project workspace (`docs/plan.md`, `components/Widget.tsx`) with a single click.
 - **Quick Download & Export**: Instant export to `.md` or `.html`.
 
 ### 5. Human-in-the-Loop Questionnaires (`ask_user`)
