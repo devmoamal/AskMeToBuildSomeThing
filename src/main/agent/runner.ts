@@ -15,6 +15,7 @@ import type { QuestionnairePayload } from '../../shared/schemas'
 import { parseThinkingAndContent } from '../../shared/thinking'
 import { CompactionEngine, TokenEstimator } from './compaction'
 import { InvalidArgumentsError } from './tools/errors'
+import { resolveMentionContext } from './context-resolver'
 
 export class AgentRunner {
   private static activePauses: Map<string, {
@@ -154,6 +155,7 @@ export class AgentRunner {
       } catch {}
 
       const isPlanMode = payload.executionMode === 'plan' || payload.prompt.trim().startsWith('/plan')
+      const isAskMode = payload.executionMode === 'ask' || payload.prompt.trim().startsWith('/ask')
 
       const projectInstructions = isPlanMode
         ? `
@@ -163,21 +165,31 @@ RULES:
 1. READ-ONLY EXPLORATION: Use "get_file_outline", "read_file", "search_code", "list_dir", and "git_status" to explore.
 2. DO NOT make code edits or run destructive terminal commands in Plan Mode.
 3. If requirements or architecture have ambiguities, use "ask_user" to interview the user.
-4. When your research is complete, create an implementation spec/plan using "make_canvas" so the user can review and approve it before switching to Build mode.
+4. When your research is complete, create an implementation spec/plan using "make_canvas" and structured session tasks using "manage_todos" so the user can review and approve it before switching to Build mode.
+`
+        : isAskMode
+        ? `
+You are in ASK MODE (Codebase Mentor & Explainer) in the repository: ${payload.projectFolder || 'current project'}.
+Your objective is to answer questions, explain architectures, teach patterns, and guide the user through the codebase.
+RULES:
+1. READ-ONLY EXPLORATION: Use "get_file_outline", "read_file", "search_code", "list_dir", "search_symbols", and "git_status" to understand the code.
+2. Provide complete, clear explanations and concise code examples directly in your response.
+3. DO NOT modify repository files or execute shell commands in Ask mode.
 `
         : `
 You are an autonomous senior software engineering agent operating in a continuous, self-verifying loop in the project repository: ${payload.projectFolder || 'current project'}.
 
 AUTONOMOUS EXECUTION PRINCIPLES:
 1. WORK CONTINUOUSLY UNTIL FULLY COMPLETE: Do not stop prematurely or hand back an incomplete task. If a task requires multiple steps, research, edits, and tests, keep working uninterrupted until the entire job is done.
-2. CODEBASE EXPLORATION & SYMBOL SEARCH: Use "search_symbols" to instantly find where functions, classes, and types are declared across the project. Use "get_file_outline" to inspect symbols in specific files. Use "list_dir" and "find_files" to explore structure.
-3. SAFETY CHECKPOINTS & GIT AWARENESS: Before executing risky multi-file refactors, consider using "manage_checkpoints" ({ action: "create", description: "..." }) so the workspace can be restored at any point. Use "git_status" to inspect dirty files, branch, and diffs.
-4. TARGETED EDITS: Use "edit_file" with old_str/new_str for surgical edits. Use "create_file" for new modules.
-5. SELF-VERIFYING CODE HEALTH: Always run "check_diagnostics" after modifying source code to catch TypeScript/compiler errors, syntax issues, or broken imports immediately. Test execution with "use_terminal" (e.g. "bun test", "npm test"). If errors arise, fix them iteratively before reporting completion.
-6. PERSISTENT MEMORY: Use "manage_memory" to record key architectural rules, technical constraints, or patterns for this project.
-7. SUBAGENT DELEGATION: Use "task" to delegate independent exploratory work or code reviews to subagents.
-8. TASK SCHEDULING: Use "schedule_task" if the user wants to run or check something after a delay.
-9. CONCLUDE CLEANLY: Once changes are verified, provide a clear, concise summary of the changes made and the validation results.
+2. SESSION TASK MANAGEMENT: When undertaking multi-step or non-trivial work, use "manage_todos" to create a structured task checklist. Keep statuses up-to-date ('in_progress', 'completed') as you advance so the user sees live execution progress.
+3. CODEBASE EXPLORATION & SYMBOL SEARCH: Use "search_symbols" to instantly find where functions, classes, and types are declared across the project. Use "get_file_outline" to inspect symbols in specific files. Use "list_dir" and "find_files" to explore structure.
+4. SAFETY CHECKPOINTS & GIT AWARENESS: Before executing risky multi-file refactors, consider using "manage_checkpoints" ({ action: "create", description: "..." }) so the workspace can be restored at any point. Use "git_status" to inspect dirty files, branch, and diffs.
+5. TARGETED EDITS: Use "edit_file" with old_str/new_str for surgical edits. Use "create_file" for new modules.
+6. SELF-VERIFYING CODE HEALTH: Always run "check_diagnostics" after modifying source code to catch TypeScript/compiler errors, syntax issues, or broken imports immediately. Test execution with "use_terminal" (e.g. "bun test", "npm test"). If errors arise, fix them iteratively before reporting completion.
+7. PERSISTENT MEMORY: Use "manage_memory" to record key architectural rules, technical constraints, or patterns for this project.
+8. SUBAGENT DELEGATION: Use "task" to delegate independent exploratory work or code reviews to subagents.
+9. TASK SCHEDULING: Use "schedule_task" if the user wants to run or check something after a delay.
+10. CONCLUDE CLEANLY: Once changes are verified, provide a clear, concise summary of the changes made and the validation results.
 - Use "ask_user" ONLY when user input is essential or when "/grill-me" is requested (ask ONE question at a time).
 - Use "web_search" and "read_url" when researching external packages, docs, or web APIs.
 - Use "customize_app" when the user asks to customize or retheme the app UI or system instructions.
@@ -190,6 +202,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
   - If user types "/diagnostics": Run "check_diagnostics" and report any type/linter issues.
   - If user types "/checkpoint": Use "manage_checkpoints" to create, list, or restore safety snapshots.
   - If user types "/diff": Use "git_status" or "manage_checkpoints" to show active changes.
+  - If user types "/todos": Use "manage_todos" ({ action: "list" }) to report current session task checklist.
 `
 
       const instructions = payload.mode === 'chat'
@@ -197,6 +210,7 @@ AUTONOMOUS EXECUTION PRINCIPLES:
 You are in conversational Chat Mode.
 - Answer user questions directly with helpful explanations and clean, copyable markdown code blocks.
 - When the user asks for code, write the complete code directly in your markdown response using standard markdown code fences with the language tag.
+- Use "manage_todos" when organizing tasks or managing multi-step goals.
 - Use "web_search" when the user asks for real-time information, current facts, up-to-date documentation, package releases, news, or when you need external web references.
 - Use "read_url" to crawl and deep-dive into full webpage contents, documentation pages, or articles found via web search or provided directly by the user.
 - Use "customize_app" when the user asks to customize, restyle, retheme, recolor, change fonts, or adjust the app UI appearance or system instructions. Write valid CSS targeting variables or classes to style the app live in production.
@@ -207,7 +221,24 @@ You are in conversational Chat Mode.
 `
         : projectInstructions
 
-      const systemPrompt = `${basePrompt}\n${instructions}${memoryContext}`
+      const envBlock = `
+<env>
+  Working directory: ${payload.projectFolder || process.cwd()}
+  Platform: ${process.platform} (${process.arch})
+  Date: ${new Date().toUTCString()}
+  Mode: ${payload.mode} (${payload.executionMode || 'build'})
+</env>
+`
+
+      const systemPrompt = `${basePrompt}\n${envBlock}\n${instructions}${memoryContext}`
+
+      // Resolve @file, @git, @diff, @canvas context mentions in user prompt
+      const mentionResult = await resolveMentionContext({
+        prompt: payload.prompt,
+        projectFolder: payload.projectFolder,
+        targetId: payload.targetId
+      })
+      const enrichedPrompt = mentionResult.enrichedPrompt
 
       const providerMessages: ProviderChatMessage[] = [
         { role: 'system', content: systemPrompt }
@@ -245,7 +276,7 @@ You are in conversational Chat Mode.
           const isCurrentMsg = m.id === userMessageId
           providerMessages.push({
             role: m.role as any,
-            content: m.content,
+            content: isCurrentMsg ? enrichedPrompt : m.content,
             images: isCurrentMsg ? payload.images : undefined
           })
         }
@@ -501,6 +532,17 @@ You are in conversational Chat Mode.
                 const canvasEv: AgentStreamEvent = { type: 'canvas_created', canvas: canvasDoc, targetId: payload.targetId }
                 if (onEvent) onEvent(canvasEv)
                 yield canvasEv
+              }
+
+              // If session todos were updated, emit todos_updated event
+              if (tc.toolName === 'manage_todos' && execResult.result?.todos) {
+                const todosEv: AgentStreamEvent = {
+                  type: 'todos_updated',
+                  todos: execResult.result.todos,
+                  targetId: payload.targetId
+                }
+                if (onEvent) onEvent(todosEv)
+                yield todosEv
               }
 
               providerMessages.push({

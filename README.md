@@ -109,6 +109,15 @@ flowchart TD
 - **Dynamic Model Fetching**: Query available models from providers on demand.
 - **Mandatory Onboarding Wizard**: Guides initial configuration on first launch, preventing dead-ends.
 
+### 8. Open-Source Intelligence & Agentic Workspace (v1.3.0)
+- **Live Session Task Checklist HUD (`manage_todos`, OpenCode parity)**: Real-time progress bar, task status tracking ('pending', 'in_progress', 'completed'), and interactive checklist HUD at the top of the chat thread.
+- **Collapsible Workspace File Tree (`Ctrl+Shift+F`)**: Integrated 3-column explorer with real-time Git status badges (`M`, `A`, `D`, `?`), search filtering, and direct one-click "Open in Canvas" integration.
+- **Unified Session Changes & Git Diff Review (`SessionReviewModal`, `Ctrl+Shift+D`, `/diff`)**: Addition/deletion line stats, file-by-file search filter, hunk styling, and one-click clipboard copy.
+- **Smart `@` Context Mentions Autocomplete & Resolution**: Type `@file:...`, `@git`, `@diff`, or `@canvas`. Automatically parsed and enriched directly into the prompt turn via `context-resolver.ts` with zero extra round-trips.
+- **Multi-Mode Agent Switcher**: Segmented toggle for 🔨 **Build** (full execution), 📐 **Plan** (architectural spec), and 💡 **Ask** (codebase mentor Q&A without file edits).
+- **Universal Tool Cards**: All 21 tools mapped to dedicated, theme-aware action cards with full dark and light theme support and zero dropped tools.
+- **Live Execution Timer**: Real-time elapsed duration counter and step indicator during active agent runs.
+
 ---
 
 ## Tech Stack

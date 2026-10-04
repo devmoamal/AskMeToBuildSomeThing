@@ -155,6 +155,17 @@ export function initializeDatabase(customPath?: string) {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS session_todos (
+      id TEXT PRIMARY KEY,
+      target_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      order_index INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     INSERT OR IGNORE INTO projects (id, name, folder_path, created_at, updated_at)
     VALUES ('__no_project__', 'No Project', '', 0, 0);
   `)

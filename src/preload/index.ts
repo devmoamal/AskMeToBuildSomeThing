@@ -49,7 +49,15 @@ const api: ElectronAPI = {
     getMessages: (sessionId: string) => ipcRenderer.invoke('projects:getMessages', sessionId),
     getCanvases: (sessionId: string) => ipcRenderer.invoke('projects:getCanvases', sessionId),
     rollback: (payload) => ipcRenderer.invoke('projects:rollback', payload),
-    saveFile: (filePath: string, content: string) => ipcRenderer.invoke('projects:saveFile', { filePath, content })
+    saveFile: (filePath: string, content: string) => ipcRenderer.invoke('projects:saveFile', { filePath, content }),
+    getDirectoryTree: (folderPath: string) => ipcRenderer.invoke('projects:getDirectoryTree', folderPath),
+    getGitStatus: (folderPath: string) => ipcRenderer.invoke('projects:getGitStatus', folderPath),
+    getGitDiff: (params: { folderPath: string; filePath?: string }) => ipcRenderer.invoke('projects:getGitDiff', params)
+  },
+  todos: {
+    getBySession: (sessionId: string) => ipcRenderer.invoke('todos:getBySession', sessionId),
+    save: (sessionId: string, todos: any[]) => ipcRenderer.invoke('todos:save', { sessionId, todos }),
+    updateStatus: (id: string, status: any) => ipcRenderer.invoke('todos:updateStatus', { id, status })
   },
   agent: {
     sendPrompt: (payload: SendPromptPayload) => ipcRenderer.invoke('agent:sendPrompt', payload),

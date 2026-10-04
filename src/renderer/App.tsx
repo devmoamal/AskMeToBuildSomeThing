@@ -5,7 +5,8 @@ import { ChatView } from './components/chat/ChatView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { OnboardingModal } from './components/onboarding/OnboardingModal'
 import { CanvasModal } from './components/canvas/CanvasModal'
-import { Sparkles, X, Download, RefreshCw, AlertCircle, ArrowUpCircle } from 'lucide-react'
+import { Sparkles, X, Download, RefreshCw, AlertCircle, ArrowUpCircle, Plus, FolderPlus, Settings as SettingsIcon, Keyboard } from 'lucide-react'
+import { CommandPalette, type CommandItem } from './components/ui/CommandPalette'
 import type { UpdateInfo, UpdateProgress } from '../shared/types'
 
 export const App: React.FC = () => {
@@ -18,6 +19,7 @@ export const App: React.FC = () => {
   const [updatePhase, setUpdatePhase] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState<UpdateProgress | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
 
   useEffect(() => {
     if (!window.api?.updater) return
@@ -215,6 +217,11 @@ export const App: React.FC = () => {
           isSidebarOpen={isSidebarEffectivelyOpen}
           onToggleSidebar={toggleSidebar}
           tokenUsage={store.currentTokenUsage}
+          onSuggestionClick={(text) => store.sendPrompt(text)}
+          sessionTodos={store.sessionTodos}
+          onUpdateTodoStatus={store.updateSessionTodoStatus}
+          executionMode={store.executionMode}
+          onChangeExecutionMode={store.setExecutionMode}
         />
       </main>
 

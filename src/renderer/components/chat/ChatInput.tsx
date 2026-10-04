@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { ArrowUp, Square, Plus, Paperclip, Image, FileText, X, Sparkles, HelpCircle } from 'lucide-react'
+import { ArrowUp, Square, Plus, Paperclip, Image, FileText, X, Sparkles, HelpCircle, Hammer, Compass, Lightbulb, GitCompare, ListTodo, AtSign } from 'lucide-react'
 import { Button } from '../ui/button'
 import { ModelSelector } from './ModelSelector'
 import { SlashCommandDropdown, SLASH_COMMANDS, type SlashCommandItem } from './SlashCommandDropdown'
-import type { ProviderConfig } from '../../../shared/types'
+import { MentionDropdown, getMentionItems, type MentionItem } from './MentionDropdown'
+import type { ProviderConfig, FileTreeNode } from '../../../shared/types'
 import { cn } from '../../lib/utils'
 import { compressImage } from '../../lib/image-compressor'
 
@@ -33,6 +34,10 @@ interface ChatInputProps {
   onPromptDraftConsumed?: () => void
   promptBar?: React.ReactNode
   tokenUsage?: { inputTokens: number; totalTokens: number } | null
+  executionMode?: 'build' | 'plan' | 'ask'
+  onChangeExecutionMode?: (mode: 'build' | 'plan' | 'ask') => void
+  workspaceFiles?: FileTreeNode[]
+  onOpenDiffReview?: () => void
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -45,11 +50,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSelectModel,
   onSend,
   onAbort,
-  placeholder = 'Ask anything... (type / for canvas or commands)',
+  placeholder = 'Ask anything... (type / for commands or @ for files)',
   promptDraft,
   onPromptDraftConsumed,
   promptBar,
-  tokenUsage
+  tokenUsage,
+  executionMode = 'build',
+  onChangeExecutionMode,
+  workspaceFiles = [],
+  onOpenDiffReview
 }) => {
   const [text, setText] = useState('')
 
@@ -74,8 +83,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [slashFilter, setSlashFilter] = useState('')
   const [slashIndex, setSlashIndex] = useState(0)
 
+  // @ Mention state
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+  const [mentionFilter, setMentionFilter] = useState('')
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionRange, setMentionRange] = useState<{ start: number; end: number } | null>(null)
+
+  // Execution elapsed timer
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  useEffect(() => {
+    let timer: any = null
+    if (isGenerating) {
+      setElapsedSeconds(0)
+      timer = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1)
+      }, 1000)
+    } else {
+      setElapsedSeconds(0)
+    }
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [isGenerating])
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const plusMenuRef = useRef<HTMLDivElement>(null)
+
+  const activeMentionItems = showMentionDropdown ? getMentionItems(mentionFilter, workspaceFiles) : []
 
   // Auto-resize textarea
   useEffect(() => {
@@ -125,6 +159,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       }
     }
 
+    if (showMentionDropdown && activeMentionItems.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev + 1) % activeMentionItems.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev - 1 + activeMentionItems.length) % activeMentionItems.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const selected = activeMentionItems[mentionIndex % activeMentionItems.length]
+        if (selected) {
+          handleSelectMention(selected)
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowMentionDropdown(false)
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit()
@@ -133,14 +193,31 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
+    const cursor = e.target.selectionStart ?? val.length
     setText(val)
 
     if (val.startsWith('/')) {
       setShowSlashDropdown(true)
+      setShowMentionDropdown(false)
       setSlashFilter(val)
       setSlashIndex(0)
+      return
+    }
+
+    setShowSlashDropdown(false)
+
+    // Check for @mention trigger
+    const textBeforeCursor = val.slice(0, cursor)
+    const match = textBeforeCursor.match(/(^|\s)@([a-zA-Z0-9_\-./:]*)$/)
+    if (match) {
+      setShowMentionDropdown(true)
+      setMentionFilter(match[2] || '')
+      setMentionIndex(0)
+      const atIndex = textBeforeCursor.lastIndexOf('@')
+      setMentionRange({ start: atIndex, end: cursor })
     } else {
-      setShowSlashDropdown(false)
+      setShowMentionDropdown(false)
+      setMentionRange(null)
     }
   }
 
@@ -148,6 +225,27 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setText(`${cmd.command} `)
     setShowSlashDropdown(false)
     textareaRef.current?.focus()
+  }
+
+  const handleSelectMention = (item: MentionItem) => {
+    if (mentionRange) {
+      const before = text.slice(0, mentionRange.start)
+      const after = text.slice(mentionRange.end)
+      const newText = `${before}${item.insertText} ${after}`
+      setText(newText)
+      setShowMentionDropdown(false)
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          const newCursor = before.length + item.insertText.length + 1
+          textareaRef.current.setSelectionRange(newCursor, newCursor)
+        }
+      }, 10)
+    } else {
+      setText((prev) => `${prev}${item.insertText} `)
+      setShowMentionDropdown(false)
+      textareaRef.current?.focus()
+    }
   }
 
   const handlePickFiles = async () => {
@@ -255,6 +353,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setText('')
     setAttachments([])
     setShowSlashDropdown(false)
+    setShowMentionDropdown(false)
+    setMentionRange(null)
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
@@ -263,7 +363,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const hasContent = text.trim().length > 0 || attachments.length > 0
 
   return (
-    <div className="relative px-4 pb-2.5 pt-1 bg-zinc-950">
+    <div className="relative px-4 pb-2.5 pt-1 bg-background">
       <div className="max-w-3xl mx-auto w-full relative">
         {/* Floating prompt HUD attached to top/back of input box */}
         {promptBar}
@@ -277,32 +377,42 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           />
         )}
 
+        {/* @ Mention dropdown */}
+        {showMentionDropdown && (
+          <MentionDropdown
+            selectedIndex={mentionIndex}
+            onSelect={handleSelectMention}
+            filterText={mentionFilter}
+            files={workspaceFiles}
+          />
+        )}
+
         {/* Input container card */}
-        <div className="relative flex flex-col rounded-lg border border-[#222] bg-[#0a0a0a] focus-within:border-[#383838] transition-all shadow-xs">
+        <div className="relative flex flex-col rounded-xl border border-border/70 bg-card/75 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all shadow-xs backdrop-blur-xs">
           {/* Attached Chips */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 px-2.5 pt-2 pb-1">
               {attachments.map((att) => (
                 <div
                   key={att.id}
-                  className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60 max-w-[260px]"
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/80 text-foreground text-xs border border-border/60 max-w-[260px]"
                 >
                   {att.previewUrl ? (
                     <img
                       src={att.previewUrl}
                       alt={att.name}
-                      className="w-4 h-4 rounded-xs object-cover shrink-0 border border-zinc-700/50"
+                      className="w-4 h-4 rounded-xs object-cover shrink-0 border border-border/50"
                     />
                   ) : att.isImage ? (
-                    <Image className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                    <Image className="w-3.5 h-3.5 shrink-0 text-amber-500" />
                   ) : (
-                    <FileText className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+                    <FileText className="w-3.5 h-3.5 shrink-0 text-sky-500" />
                   )}
                   <span className="truncate flex-1 font-mono text-[11px]">{att.name}</span>
                   {att.savingsRatio !== undefined && att.savingsRatio > 0 && (
                     <span
                       title={`Compressed to WebP/JPEG saving ~${att.savingsRatio}% size/tokens`}
-                      className="text-[9px] px-1 py-0.2 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/40 font-mono shrink-0"
+                      className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono shrink-0"
                     >
                       -{att.savingsRatio}%
                     </span>
@@ -310,7 +420,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveAttachment(att.id)}
-                    className="text-zinc-500 hover:text-zinc-300 p-0.5 cursor-pointer"
+                    className="text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -330,20 +440,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             disabled={isPromptActive}
             placeholder={isPromptActive ? 'Respond to the prompt above to continue...' : placeholder}
             className={cn(
-              'w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none leading-relaxed min-h-[38px]',
+              'w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-xs text-foreground placeholder:text-muted-foreground outline-none leading-relaxed min-h-[38px]',
               isPromptActive && 'opacity-50 cursor-not-allowed'
             )}
           />
 
           {/* Footer Actions Toolbar */}
-          <div className="flex items-center justify-between px-2 py-1">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-2 py-1 gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Plus Action Menu */}
               <div className="relative" ref={plusMenuRef}>
                 <button
                   type="button"
                   onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-                  className="flex items-center justify-center h-6 w-6 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 transition-colors cursor-pointer"
+                  className="flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                   title="Add attachment or action"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -351,26 +461,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
                 {/* Plus Menu Popover */}
                 {isPlusMenuOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-48 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-1 z-50">
+                  <div className="absolute bottom-full left-0 mb-2 w-48 bg-popover border border-border rounded-lg shadow-xl p-1 z-50 text-foreground animate-in fade-in zoom-in-95 duration-100">
                     <button
                       type="button"
                       onClick={handlePickFiles}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-popover-foreground hover:bg-muted transition-colors text-left cursor-pointer"
                     >
-                      <Paperclip className="w-3.5 h-3.5 text-zinc-400" />
+                      <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>Attach File</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handlePickImages}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-popover-foreground hover:bg-muted transition-colors text-left cursor-pointer"
                     >
-                      <Image className="w-3.5 h-3.5 text-zinc-400" />
+                      <Image className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>Attach Image</span>
                     </button>
 
-                    <div className="h-px bg-zinc-800 my-1" />
+                    <div className="h-px bg-border my-1" />
 
                     <button
                       type="button"
@@ -379,9 +489,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         setText('/canvas ')
                         textareaRef.current?.focus()
                       }}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-popover-foreground hover:bg-muted transition-colors text-left cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                       <span>/canvas (Markdown Canvas)</span>
                     </button>
 
@@ -392,16 +502,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         setText('/ask-user ')
                         textareaRef.current?.focus()
                       }}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-popover-foreground hover:bg-muted transition-colors text-left cursor-pointer"
                     >
-                      <HelpCircle className="w-3.5 h-3.5 text-zinc-400" />
+                      <HelpCircle className="w-3.5 h-3.5 text-sky-500" />
                       <span>/ask-user (Questionnaire)</span>
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Model Selector right beside plus! */}
+              {/* Model Selector */}
               <ModelSelector
                 providers={providers}
                 selectedProviderId={selectedProviderId}
@@ -409,9 +519,73 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 onSelectModel={onSelectModel}
               />
 
-              {/* Plan Mode Badge */}
+              {/* Segmented Execution Mode Switcher */}
+              {onChangeExecutionMode && (
+                <div className="flex items-center rounded-lg p-0.5 bg-muted/60 border border-border/50 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => onChangeExecutionMode('build')}
+                    title="Build Mode: Read/Write files, run commands, execute implementation tasks"
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                      executionMode === 'build'
+                        ? 'bg-primary text-primary-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/70'
+                    )}
+                  >
+                    <Hammer className="w-3 h-3" />
+                    <span className="hidden sm:inline">Build</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeExecutionMode('plan')}
+                    title="Plan Mode: Architectural design, plan tasks before executing"
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                      executionMode === 'plan'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/70'
+                    )}
+                  >
+                    <Compass className="w-3 h-3" />
+                    <span className="hidden sm:inline">Plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeExecutionMode('ask')}
+                    title="Ask Mode: Codebase mentor, explanations & Q&A without editing files"
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer',
+                      executionMode === 'ask'
+                        ? 'bg-sky-500 text-white shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/70'
+                    )}
+                  >
+                    <Lightbulb className="w-3 h-3" />
+                    <span className="hidden sm:inline">Ask</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Quick @ mention button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setText(prev => `${prev}@`)
+                  setShowMentionDropdown(true)
+                  setMentionFilter('')
+                  setMentionIndex(0)
+                  textareaRef.current?.focus()
+                }}
+                className="flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                title="Mention context item or file (@)"
+              >
+                <AtSign className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Plan Mode Text Badge (if user explicitly typed /plan) */}
               {text.trim().startsWith('/plan') && (
-                <span className="text-[10px] font-medium text-amber-400 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded shadow-xs">
+                <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded-md shadow-xs">
                   PLAN MODE
                 </span>
               )}
@@ -419,7 +593,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               {/* Token Usage Badge */}
               {tokenUsage && tokenUsage.totalTokens > 0 && (
                 <span
-                  className="hidden sm:inline-block text-[10px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800/80 px-1.5 py-0.5 rounded"
+                  className="hidden sm:inline-block text-[10px] font-mono text-muted-foreground bg-muted/60 border border-border/60 px-1.5 py-0.5 rounded-md"
                   title={`Active session context: ~${tokenUsage.totalTokens.toLocaleString()} tokens`}
                 >
                   ~{tokenUsage.totalTokens > 1000 ? `${(tokenUsage.totalTokens / 1000).toFixed(1)}k` : tokenUsage.totalTokens} tok
@@ -427,37 +601,55 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               )}
             </div>
 
-          {/* Send / Stop Button */}
-          <div className="flex items-center gap-2">
-            {isGenerating ? (
-              <button
-                type="button"
-                onClick={onAbort}
-                className="flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium bg-red-950/60 text-red-300 border border-red-800/60 hover:bg-red-900/60 transition-colors cursor-pointer"
-              >
-                <Square className="w-2.5 h-2.5 fill-current" />
-                <span>Stop</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={!hasContent || isPromptActive}
-                onClick={handleSubmit}
-                className={cn(
-                  'flex items-center justify-center h-6 w-6 rounded-md transition-all cursor-pointer',
-                  hasContent && !isPromptActive
-                    ? 'bg-white text-black hover:bg-zinc-200 shadow-xs'
-                    : 'bg-[#1a1a1a] text-zinc-600 border border-[#222] cursor-not-allowed opacity-50'
-                )}
-                title="Send message"
-              >
-                <ArrowUp className="w-3 h-3" />
-              </button>
-            )}
+            {/* Send / Stop / Diff Button */}
+            <div className="flex items-center gap-1.5">
+              {onOpenDiffReview && (
+                <button
+                  type="button"
+                  onClick={onOpenDiffReview}
+                  className="flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer border border-border/50"
+                  title="Review uncommitted changes and git diffs"
+                >
+                  <GitCompare className="w-3 h-3 text-emerald-500" />
+                  <span className="hidden md:inline">Diff</span>
+                </button>
+              )}
+
+              {isGenerating ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[10px] text-muted-foreground animate-pulse px-1">
+                    {elapsedSeconds}s
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onAbort}
+                    className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer shadow-xs"
+                    title="Stop agent run"
+                  >
+                    <Square className="w-2.5 h-2.5 fill-current" />
+                    <span>Stop</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!hasContent || isPromptActive}
+                  onClick={handleSubmit}
+                  className={cn(
+                    'flex items-center justify-center h-6.5 w-6.5 rounded-md transition-all cursor-pointer',
+                    hasContent && !isPromptActive
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs'
+                      : 'bg-muted text-muted-foreground border border-border/50 cursor-not-allowed opacity-50'
+                  )}
+                  title="Send message"
+                >
+                  <ArrowUp className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
   )
 }

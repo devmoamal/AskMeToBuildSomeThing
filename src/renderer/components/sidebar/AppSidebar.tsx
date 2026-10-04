@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Settings, PanelLeftClose } from 'lucide-react'
+import { Settings, PanelLeftClose, Plus } from 'lucide-react'
 import { ProjectsTab } from './ProjectsTab'
 import type { Project, ProjectSession, ProviderConfig } from '../../../shared/types'
 import { cn } from '../../lib/utils'
@@ -110,20 +110,31 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           isOpen ? 'translate-x-0 opacity-100' : '-translate-x-12 opacity-0'
         )}
       >
-        {/* Top Header: Title & Close */}
+        {/* Top Header: Title, New Chat & Close */}
         <div className="h-11 px-3.5 flex items-center justify-between shrink-0 border-b border-[#141414]">
           <span className="font-semibold text-[13px] text-zinc-200 tracking-tight">
             AskMeToBuildSomeThing
           </span>
-          <button
-            type="button"
-            onClick={onCloseSidebar}
-            className="side-toggle-btn p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 active:scale-90 transition-all duration-200 cursor-pointer"
-            title="Close sidebar (Ctrl+B)"
-            aria-label="Close sidebar"
-          >
-            <PanelLeftClose className="w-4 h-4 transition-transform duration-200 hover:scale-110" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onNewSession('New Chat')}
+              className="flex items-center gap-1 h-7 px-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+              title="New chat (Ctrl+N)"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New</span>
+            </button>
+            <button
+              type="button"
+              onClick={onCloseSidebar}
+              className="side-toggle-btn p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 active:scale-90 transition-all duration-200 cursor-pointer"
+              title="Close sidebar (Ctrl+B)"
+              aria-label="Close sidebar"
+            >
+              <PanelLeftClose className="w-4 h-4 transition-transform duration-200 hover:scale-110" />
+            </button>
+          </div>
         </div>
 
         {/* Main Projects / Workspace View (No tabs split) */}

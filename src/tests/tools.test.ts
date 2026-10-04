@@ -5,25 +5,26 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 describe('Tool Registry and Scopes', () => {
-  it('should restrict tools in chat mode to make_canvas, ask_user, web_search, read_url, customize_app, and schedule_task', () => {
+  it('should restrict tools in chat mode to make_canvas, ask_user, web_search, read_url, customize_app, schedule_task, and manage_todos', () => {
     const chatTools = ToolRegistry.getToolsForMode('chat')
     const toolNames = chatTools.map(t => t.name)
-    expect(toolNames).toHaveLength(6)
+    expect(toolNames).toHaveLength(7)
     expect(toolNames).toContain('make_canvas')
     expect(toolNames).toContain('ask_user')
     expect(toolNames).toContain('web_search')
     expect(toolNames).toContain('read_url')
     expect(toolNames).toContain('customize_app')
     expect(toolNames).toContain('schedule_task')
+    expect(toolNames).toContain('manage_todos')
     expect(toolNames).not.toContain('read_file')
     expect(toolNames).not.toContain('create_file')
     expect(toolNames).not.toContain('use_terminal')
   })
 
-  it('should allow all 20 tools in project mode', () => {
+  it('should allow all 21 tools in project mode', () => {
     const projectTools = ToolRegistry.getToolsForMode('project')
     const toolNames = projectTools.map(t => t.name)
-    expect(toolNames).toHaveLength(20)
+    expect(toolNames).toHaveLength(21)
     expect(toolNames).toContain('read_file')
     expect(toolNames).toContain('create_file')
     expect(toolNames).toContain('edit_file')
@@ -44,6 +45,7 @@ describe('Tool Registry and Scopes', () => {
     expect(toolNames).toContain('read_url')
     expect(toolNames).toContain('customize_app')
     expect(toolNames).toContain('schedule_task')
+    expect(toolNames).toContain('manage_todos')
   })
 
   it('should execute create_file, edit_file and read_file with line diff tracking', async () => {

@@ -108,6 +108,18 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
     label: '/diff',
     description: 'Inspect active working tree git changes and uncommitted diffs',
     icon: GitCompare
+  },
+  {
+    command: '/todos',
+    label: '/todos',
+    description: 'Inspect and display current session task checklist',
+    icon: ListTodo
+  },
+  {
+    command: '/ask',
+    label: '/ask',
+    description: 'Codebase mentor mode: ask questions and get explanations',
+    icon: HelpCircle
   }
 ]
 

@@ -19,6 +19,7 @@ import { taskTool } from './task'
 import { checkDiagnosticsTool } from './check-diagnostics'
 import { searchSymbolsTool } from './search-symbols'
 import { manageCheckpointsTool } from './manage-checkpoints'
+import { manageTodosTool } from './manage-todos'
 import { InvalidArgumentsError } from './errors'
 import { TruncateService } from './truncate'
 
@@ -42,7 +43,8 @@ export const allTools: AgentTool[] = [
   webSearchTool,
   readUrlTool,
   customizeAppTool,
-  scheduleTaskTool
+  scheduleTaskTool,
+  manageTodosTool
 ]
 
 export class ToolRegistry {

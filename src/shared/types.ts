@@ -85,6 +85,41 @@ export type ProjectMemory = {
   updatedAt: number
 }
 
+export type SessionTodoItem = {
+  id: string
+  targetId?: string
+  content: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority?: 'high' | 'medium' | 'low'
+  orderIndex?: number
+  createdAt?: number
+  updatedAt?: number
+}
+
+export type FileTreeNode = {
+  name: string
+  path: string
+  relativePath: string
+  isDirectory: boolean
+  extension?: string
+  size?: number
+  children?: FileTreeNode[]
+}
+
+export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed' | 'copied'
+
+export type GitFileChange = {
+  path: string
+  status: GitFileStatus
+  staged?: boolean
+}
+
+export type GitStatusSummary = {
+  branch: string
+  files: GitFileChange[]
+  clean: boolean
+}
+
 export type WebSearchResult = {
   title: string
   url: string
@@ -151,6 +186,7 @@ export type AgentStreamEvent =
   | { type: 'tool_call_start'; call: ToolCallRecord; targetId: string }
   | { type: 'tool_call_stream'; id: string; chunk: string; targetId: string }
   | { type: 'tool_call_done'; id: string; result: any; status: ToolCallStatus; targetId: string }
+  | { type: 'todos_updated'; todos: SessionTodoItem[]; targetId: string }
   | { type: 'pause_for_user'; questionnaire: QuestionnairePayload; toolCallId: string; targetId: string }
   | { type: 'canvas_created'; canvas: CanvasDocument; targetId: string }
   | { type: 'title_generated'; targetId: string; title: string }
@@ -161,7 +197,7 @@ export type AgentStreamEvent =
 
 export type SendPromptPayload = {
   mode: 'chat' | 'project'
-  executionMode?: 'plan' | 'build'
+  executionMode?: 'plan' | 'build' | 'ask'
   targetId: string // chatId or projectSessionId
   projectFolder?: string
   prompt: string

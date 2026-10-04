@@ -295,17 +295,58 @@ export const ProjectsTab: React.FC<ProjectsTabProps> = ({
             </div>
           </div>
 
-          {/* Sessions under No Project */}
-          {!isNoProjectCollapsed && (
-            <div className="pl-3 space-y-0.5 my-0.5">
-              {noProjectSessions.map(sess => renderSessionItem(sess, '__no_project__'))}
-              {noProjectSessions.length === 0 && (
-                <div className="py-2 px-2 text-xs text-zinc-600 italic">
-                  No chats yet. Click + to start.
+          {/* Sessions under No Project — grouped by date */}
+          {!isNoProjectCollapsed && (() => {
+            if (noProjectSessions.length === 0) {
+              return (
+                <div className="pl-3 space-y-0.5 my-0.5">
+                  <div className="py-2 px-2 text-xs text-zinc-600 italic">
+                    No chats yet. Click + to start.
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+              )
+            }
+
+            const now = Date.now()
+            const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
+            const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+            const startOf7DaysAgo = new Date(startOfToday); startOf7DaysAgo.setDate(startOf7DaysAgo.getDate() - 7)
+
+            const groups: { label: string; sessions: ProjectSession[] }[] = [
+              { label: 'Today', sessions: [] },
+              { label: 'Yesterday', sessions: [] },
+              { label: 'Previous 7 Days', sessions: [] },
+              { label: 'Older', sessions: [] },
+            ]
+
+            for (const sess of noProjectSessions) {
+              const ts = sess.createdAt ?? 0
+              if (ts >= startOfToday.getTime()) {
+                groups[0].sessions.push(sess)
+              } else if (ts >= startOfYesterday.getTime()) {
+                groups[1].sessions.push(sess)
+              } else if (ts >= startOf7DaysAgo.getTime()) {
+                groups[2].sessions.push(sess)
+              } else {
+                groups[3].sessions.push(sess)
+              }
+            }
+
+            return (
+              <div className="pl-3 space-y-0.5 my-0.5">
+                {groups.map(group =>
+                  group.sessions.length === 0 ? null : (
+                    <div key={group.label}>
+                      <div className="px-2 pt-2 pb-0.5 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+                        {group.label}
+                      </div>
+                      {group.sessions.map(sess => renderSessionItem(sess, '__no_project__'))}
+                    </div>
+                  )
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* User Folders (Local Projects) */}

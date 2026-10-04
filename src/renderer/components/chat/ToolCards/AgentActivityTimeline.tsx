@@ -9,6 +9,12 @@ import { QuestionnaireCard } from './QuestionnaireCard'
 import { WebSearchActionCard } from './WebSearchActionCard'
 import { ReadUrlActionCard } from './ReadUrlActionCard'
 import { ExplorationActionCard } from './ExplorationActionCard'
+import { DiagnosticsActionCard } from './DiagnosticsActionCard'
+import { GitStatusActionCard } from './GitStatusActionCard'
+import { CheckpointActionCard } from './CheckpointActionCard'
+import { SymbolSearchActionCard } from './SymbolSearchActionCard'
+import { TodoActionCard } from './TodoActionCard'
+import { GenericToolActionCard } from './GenericToolActionCard'
 import { VercelBadge } from '../../ui/VercelIcon'
 
 interface AgentActivityTimelineProps {
@@ -19,8 +25,8 @@ interface AgentActivityTimelineProps {
 }
 
 /**
- * Vercel AI SDK Tool Invocations Timeline
- * Groups multi-tool steps into a sleek collapsible Geist container
+ * Universal Agent Tool Activity Timeline
+ * Cleanly groups and renders all multi-turn tool steps with theme-aware styling
  */
 export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   toolCalls,
@@ -28,16 +34,10 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   onSubmitAnswers,
   onApproveTool
 }) => {
+  // All action steps except canvas and interactive questionnaire
   const actionSteps = toolCalls.filter(tc =>
-    tc.toolName === 'use_terminal' ||
-    tc.toolName === 'create_file' ||
-    tc.toolName === 'edit_file' ||
-    tc.toolName === 'read_file' ||
-    tc.toolName === 'web_search' ||
-    tc.toolName === 'read_url' ||
-    tc.toolName === 'list_dir' ||
-    tc.toolName === 'find_files' ||
-    tc.toolName === 'search_code'
+    tc.toolName !== 'make_canvas' &&
+    tc.toolName !== 'ask_user'
   )
   const canvasCalls = toolCalls.filter(tc => tc.toolName === 'make_canvas')
   const questionnaireCalls = toolCalls.filter(tc => tc.toolName === 'ask_user')
@@ -67,9 +67,17 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   const cmdCount = actionSteps.filter(tc => tc.toolName === 'use_terminal').length
   const searchCount = actionSteps.filter(tc => tc.toolName === 'web_search').length
   const crawlCount = actionSteps.filter(tc => tc.toolName === 'read_url').length
+  const diagCount = actionSteps.filter(tc => tc.toolName === 'check_diagnostics').length
+  const gitCount = actionSteps.filter(tc => tc.toolName === 'git_status' || tc.toolName === 'manage_checkpoints').length
+  const symbolCount = actionSteps.filter(tc => tc.toolName === 'search_symbols' || tc.toolName === 'get_file_outline').length
+  const todoCount = actionSteps.filter(tc => tc.toolName === 'manage_todos').length
   const exploreCount = actionSteps.filter(tc => tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code').length
 
   const summaryParts = []
+  if (todoCount > 0) summaryParts.push(`${todoCount} task update`)
+  if (diagCount > 0) summaryParts.push(`${diagCount} diagnostics`)
+  if (symbolCount > 0) summaryParts.push(`${symbolCount} symbol search`)
+  if (gitCount > 0) summaryParts.push(`${gitCount} git checkpoint`)
   if (exploreCount > 0) summaryParts.push(`${exploreCount} explore`)
   if (readCount > 0) summaryParts.push(`${readCount} read`)
   if (writeCount > 0) summaryParts.push(`${writeCount} create`)
@@ -81,18 +89,19 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
   return (
     <div className="space-y-1.5 select-text my-1.5">
       {actionSteps.length > 0 && (
-        <div className="rounded-lg border border-[#222] bg-[#000000] overflow-hidden shadow-xs font-mono">
+        <div className="rounded-xl border border-border/70 bg-card overflow-hidden shadow-xs font-mono">
           <div
             onClick={() => setIsExpanded(!isExpanded)}
-            className="h-7 px-3 flex items-center justify-between bg-[#0a0a0a] hover:bg-[#111] transition-colors cursor-pointer select-none text-[11px]"
+            className="h-8 px-3 flex items-center justify-between bg-muted/40 hover:bg-muted/70 transition-colors cursor-pointer select-none text-[11px]"
           >
             <div className="flex items-center gap-2 truncate min-w-0">
-              <Layers className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-              <span className="text-zinc-400 font-medium truncate">
+              <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="text-muted-foreground font-medium truncate">
                 tool_invocations:
               </span>
-              <span className="text-white font-semibold truncate">
-                {summaryParts.join(', ') || `${totalCount} steps`}
+              <span className="text-foreground font-semibold truncate">
+                {summaryParts.slice(0, 3).join(', ') || `${totalCount} steps`}
+                {summaryParts.length > 3 && ` +${summaryParts.length - 3} more`}
               </span>
             </div>
 
@@ -119,7 +128,7 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
 
               <button
                 type="button"
-                className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"
               >
                 {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
@@ -127,7 +136,7 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
           </div>
 
           {isExpanded && (
-            <div className="p-2 space-y-1.5 bg-[#050505] border-t border-[#1a1a1a]">
+            <div className="p-2 space-y-1.5 bg-card/60 border-t border-border/40">
               {actionSteps.map(tc => {
                 if (tc.toolName === 'use_terminal') {
                   return <TerminalActionCard key={tc.id} toolCall={tc} onApprove={onApproveTool} />
@@ -147,7 +156,22 @@ export const AgentActivityTimeline: React.FC<AgentActivityTimelineProps> = ({
                 if (tc.toolName === 'list_dir' || tc.toolName === 'find_files' || tc.toolName === 'search_code') {
                   return <ExplorationActionCard key={tc.id} toolCall={tc} />
                 }
-                return null
+                if (tc.toolName === 'check_diagnostics') {
+                  return <DiagnosticsActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'git_status') {
+                  return <GitStatusActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'manage_checkpoints') {
+                  return <CheckpointActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'search_symbols' || tc.toolName === 'get_file_outline') {
+                  return <SymbolSearchActionCard key={tc.id} toolCall={tc} />
+                }
+                if (tc.toolName === 'manage_todos') {
+                  return <TodoActionCard key={tc.id} toolCall={tc} />
+                }
+                return <GenericToolActionCard key={tc.id} toolCall={tc} />
               })}
             </div>
           )}

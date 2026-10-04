@@ -9,7 +9,8 @@ import type {
   Message,
   CanvasDocument,
   AgentStreamEvent,
-  MessagePart
+  MessagePart,
+  SessionTodoItem
 } from '../../shared/types'
 import type { QuestionnairePayload } from '../../shared/schemas'
 import { compressImage } from '../lib/image-compressor'
@@ -61,6 +62,8 @@ export function useAppStore() {
 
   const [selectedModels, setSelectedModels] = useState<Record<string, { providerId: string; model: string }>>({})
   const [tokenUsages, setTokenUsages] = useState<Record<string, { inputTokens: number; totalTokens: number }>>({})
+  const [sessionTodos, setSessionTodos] = useState<Record<string, SessionTodoItem[]>>({})
+  const [executionModes, setExecutionModes] = useState<Record<string, 'build' | 'plan' | 'ask'>>({})
   const [activeQuestionnaires, setActiveQuestionnaires] = useState<Record<string, {
     toolCallId: string
     payload: QuestionnairePayload
@@ -75,6 +78,8 @@ export function useAppStore() {
   const activeQuestionnaire = activeSessionId ? (activeQuestionnaires[activeSessionId] || null) : null
   const activeApproval = activeSessionId ? (activeApprovals[activeSessionId] || null) : null
   const currentTokenUsage = activeSessionId ? (tokenUsages[activeSessionId] || null) : null
+  const currentSessionTodos = activeSessionId ? (sessionTodos[activeSessionId] || []) : []
+  const currentExecutionMode = activeSessionId ? (executionModes[activeSessionId] || 'build') : 'build'
 
   const activeSessionIdRef = useRef<string | null>(activeSessionId)
   useEffect(() => {
@@ -179,6 +184,14 @@ export function useAppStore() {
         setCanvases(cvs)
       }
     })
+
+    if (window.api?.todos?.getBySession) {
+      window.api.todos.getBySession(activeSessionId).then((todosList) => {
+        if (activeSessionIdRef.current === activeSessionId) {
+          setSessionTodos(prev => ({ ...prev, [activeSessionId]: todosList || [] }))
+        }
+      })
+    }
   }, [activeSessionId])
 
   // Listen to streaming IPC events from AgentRunner
@@ -363,6 +376,11 @@ export function useAppStore() {
             setMessages(updatedBuffer)
           }
         }
+      } else if (event.type === 'todos_updated') {
+        setSessionTodos(prev => ({
+          ...prev,
+          [targetId]: event.todos
+        }))
       } else if (event.type === 'pause_for_user') {
         setActiveQuestionnaires(prev => ({
           ...prev,
@@ -397,6 +415,12 @@ export function useAppStore() {
           return next
         })
         generatingSessionIdsRef.current.delete(targetId)
+
+        if (window.api?.todos?.getBySession) {
+          window.api.todos.getBySession(targetId).then((todosList) => {
+            setSessionTodos(prev => ({ ...prev, [targetId]: todosList || [] }))
+          })
+        }
 
         setActiveQuestionnaires(prev => {
           if (!prev[targetId]) return prev
@@ -625,10 +649,12 @@ export function useAppStore() {
     const isNoProj = !activeProjectId || activeProjectId === '__no_project__'
     const activeProj = isNoProj ? null : projects.find(p => p.id === activeProjectId)
     const isPlan = fullPrompt.trim().startsWith('/plan')
+    const isAsk = fullPrompt.trim().startsWith('/ask')
+    const finalMode = isPlan ? 'plan' : isAsk ? 'ask' : currentExecutionMode
 
     await window.api.agent.sendPrompt({
       mode: isNoProj ? 'chat' : 'project',
-      executionMode: isPlan ? 'plan' : 'build',
+      executionMode: finalMode,
       targetId,
       projectFolder: activeProj?.folderPath,
       prompt: fullPrompt,
@@ -636,6 +662,26 @@ export function useAppStore() {
       model: finalModel,
       images: images.length > 0 ? images : undefined
     })
+  }
+
+  const updateSessionTodoStatus = async (id: string, status: SessionTodoItem['status']) => {
+    if (!activeSessionId || !window.api?.todos?.updateStatus) return
+    setSessionTodos(prev => {
+      const current = prev[activeSessionId] || []
+      return {
+        ...prev,
+        [activeSessionId]: current.map(t => t.id === id ? { ...t, status } : t)
+      }
+    })
+    await window.api.todos.updateStatus(id, status)
+  }
+
+  const setExecutionMode = (mode: 'build' | 'plan' | 'ask') => {
+    if (!activeSessionId) return
+    setExecutionModes(prev => ({
+      ...prev,
+      [activeSessionId]: mode
+    }))
   }
 
   const submitQuestionnaireAnswers = async (toolCallId: string, answers: Record<string, string | string[]>) => {
@@ -821,6 +867,10 @@ export function useAppStore() {
     rollbackToMessage,
     currentTokenUsage,
     tokenUsages,
+    sessionTodos: currentSessionTodos,
+    updateSessionTodoStatus,
+    executionMode: currentExecutionMode,
+    setExecutionMode,
     refreshState: loadState
   }
 }

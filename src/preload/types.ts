@@ -15,7 +15,10 @@ import type {
   UpdateProgress,
   UpdateCheckResult,
   ScheduledTask,
-  ProjectMemory
+  ProjectMemory,
+  SessionTodoItem,
+  FileTreeNode,
+  GitStatusSummary
 } from '../shared/types'
 
 export interface ElectronAPI {
@@ -59,6 +62,14 @@ export interface ElectronAPI {
     getCanvases: (sessionId: string) => Promise<CanvasDocument[]>
     rollback: (payload: { sessionId: string; messageId: string; deleteTargetMessage?: boolean }) => Promise<{ deletedMessageIds: string[]; remainingMessages: Message[] }>
     saveFile: (filePath: string, content: string) => Promise<{ success: boolean; filePath: string }>
+    getDirectoryTree: (folderPath: string) => Promise<FileTreeNode[]>
+    getGitStatus: (folderPath: string) => Promise<GitStatusSummary>
+    getGitDiff: (params: { folderPath: string; filePath?: string }) => Promise<{ diff: string; success: boolean; error?: string }>
+  }
+  todos: {
+    getBySession: (sessionId: string) => Promise<SessionTodoItem[]>
+    save: (sessionId: string, todos: any[]) => Promise<SessionTodoItem[]>
+    updateStatus: (id: string, status: SessionTodoItem['status']) => Promise<{ success: boolean }>
   }
   agent: {
     sendPrompt: (payload: SendPromptPayload) => Promise<void>

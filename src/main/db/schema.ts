@@ -98,3 +98,14 @@ export const projectMemoriesTable = sqliteTable('project_memories', {
   category: text('category').notNull().default('architecture'),
   updatedAt: integer('updated_at').notNull()
 })
+
+export const sessionTodosTable = sqliteTable('session_todos', {
+  id: text('id').primaryKey(),
+  targetId: text('target_id').notNull(),
+  content: text('content').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority: text('priority').notNull().default('medium'), // 'high' | 'medium' | 'low'
+  orderIndex: integer('order_index').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+})

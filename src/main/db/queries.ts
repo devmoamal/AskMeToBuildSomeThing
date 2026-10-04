@@ -10,7 +10,8 @@ import {
   messagesTable,
   canvasesTable,
   scheduledTasksTable,
-  projectMemoriesTable
+  projectMemoriesTable,
+  sessionTodosTable
 } from './schema'
 import type {
   ProviderConfig,
@@ -22,7 +23,8 @@ import type {
   Message,
   CanvasDocument,
   ScheduledTask,
-  ProjectMemory
+  ProjectMemory,
+  SessionTodoItem
 } from '../../shared/types'
 import { AppSettingsSchema } from '../../shared/schemas'
 
@@ -691,5 +693,71 @@ export const dbQueries = {
   async deleteProjectMemory(id: string): Promise<void> {
     const db = getDb()
     await db.delete(projectMemoriesTable).where(eq(projectMemoriesTable.id, id))
+  },
+
+  // --- Session Task List / Todos (OpenCode todowrite parity) ---
+  async getSessionTodos(targetId: string): Promise<SessionTodoItem[]> {
+    const db = getDb()
+    const rows = await db.select().from(sessionTodosTable)
+      .where(eq(sessionTodosTable.targetId, targetId))
+      .orderBy(asc(sessionTodosTable.orderIndex), asc(sessionTodosTable.createdAt))
+    return rows.map(r => ({
+      id: r.id,
+      targetId: r.targetId,
+      content: r.content,
+      status: r.status as any,
+      priority: (r.priority as any) || 'medium',
+      orderIndex: r.orderIndex,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }))
+  },
+
+  async saveSessionTodos(targetId: string, todos: Array<{ id?: string; content: string; status?: string; priority?: string }>): Promise<SessionTodoItem[]> {
+    const db = getDb()
+    // Transactional replace for this targetId
+    await db.delete(sessionTodosTable).where(eq(sessionTodosTable.targetId, targetId))
+    const now = Date.now()
+    const saved: SessionTodoItem[] = []
+
+    for (let i = 0; i < todos.length; i++) {
+      const item = todos[i]
+      const id = item.id || `todo_${now}_${i}_${Math.random().toString(36).substring(2, 6)}`
+      const status = (item.status as any) || 'pending'
+      const priority = (item.priority as any) || 'medium'
+      await db.insert(sessionTodosTable).values({
+        id,
+        targetId,
+        content: item.content,
+        status,
+        priority,
+        orderIndex: i,
+        createdAt: now,
+        updatedAt: now
+      })
+      saved.push({
+        id,
+        targetId,
+        content: item.content,
+        status,
+        priority,
+        orderIndex: i,
+        createdAt: now,
+        updatedAt: now
+      })
+    }
+    return saved
+  },
+
+  async updateTodoStatus(id: string, status: SessionTodoItem['status']): Promise<void> {
+    const db = getDb()
+    await db.update(sessionTodosTable)
+      .set({ status, updatedAt: Date.now() })
+      .where(eq(sessionTodosTable.id, id))
+  },
+
+  async deleteSessionTodos(targetId: string): Promise<void> {
+    const db = getDb()
+    await db.delete(sessionTodosTable).where(eq(sessionTodosTable.targetId, targetId))
   }
 }

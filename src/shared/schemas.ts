@@ -184,3 +184,16 @@ export const TaskArgsSchema = z.object({
 })
 export type TaskArgs = z.infer<typeof TaskArgsSchema>
 
+export const TodoItemSchema = z.object({
+  id: z.string().optional().describe('Unique identifier for this task (if updating existing)'),
+  content: z.string().min(1, 'Task content is required').describe('Clear, actionable task description'),
+  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']).default('pending').describe('Current status of the task'),
+  priority: z.enum(['high', 'medium', 'low']).default('medium').describe('Priority level')
+})
+
+export const ManageTodosArgsSchema = z.object({
+  action: z.enum(['update', 'list']).default('update').describe('Action to perform: "update" to replace/sync the task checklist, or "list" to view current tasks'),
+  todos: z.array(TodoItemSchema).optional().describe('List of tasks for this session. When updating, provide the complete updated list of tasks so the status of each item is accurately reflected.')
+})
+export type ManageTodosArgs = z.infer<typeof ManageTodosArgsSchema>
+

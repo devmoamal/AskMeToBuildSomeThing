@@ -14,7 +14,35 @@ interface MessageListProps {
   onApproveTool?: (toolCallId: string, approved: boolean) => void
   onRollback?: (message: Message) => void
   isPromptActive?: boolean
+  onSuggestionClick?: (text: string) => void
 }
+
+const SUGGESTION_CARDS = [
+  {
+    icon: Layers,
+    label: 'Architecture',
+    description: 'Scope components, schemas, and app logic',
+    text: 'Help me design a scalable architecture for my project. Explain the components, data flow, and key design decisions.'
+  },
+  {
+    icon: FileCode,
+    label: '/canvas',
+    description: 'Generate markdown notes and specifications',
+    text: '/canvas Create a detailed technical specification document for my project'
+  },
+  {
+    icon: Compass,
+    label: 'Project Files',
+    description: 'Read, create, and iterate on project files',
+    text: 'Explore my project structure and give me an overview of the codebase'
+  },
+  {
+    icon: Sparkles,
+    label: '/grill-me',
+    description: 'Structured interactive questionnaires',
+    text: '/grill-me What should I build next?'
+  }
+]
 
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
@@ -23,7 +51,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   onSubmitAnswers,
   onApproveTool,
   onRollback,
-  isPromptActive = false
+  isPromptActive = false,
+  onSuggestionClick
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -69,56 +98,41 @@ export const MessageList: React.FC<MessageListProps> = ({
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none overflow-y-auto">
         <div className="max-w-md w-full space-y-6 animate-in fade-in duration-200">
-          <div className="space-y-1.5">
-            <h2 className="text-xl font-semibold tracking-tight text-zinc-100">
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-400 bg-clip-text text-transparent">
               AskMeToBuildSomeThing
             </h2>
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-zinc-500">
               What would you like to build or explore today?
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-left">
-            <div className="p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900 hover:border-zinc-700 transition-all">
-              <div className="flex items-center gap-2 text-zinc-200 text-xs font-medium mb-1">
-                <Layers className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Architecture</span>
-              </div>
-              <p className="text-[11px] text-zinc-500 leading-normal">
-                Scope components, schemas, and app logic
-              </p>
-            </div>
-
-            <div className="p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900 hover:border-zinc-700 transition-all">
-              <div className="flex items-center gap-2 text-zinc-200 text-xs font-medium mb-1">
-                <FileCode className="w-3.5 h-3.5 text-zinc-400" />
-                <span>/canvas</span>
-              </div>
-              <p className="text-[11px] text-zinc-500 leading-normal">
-                Generate markdown notes and specifications
-              </p>
-            </div>
-
-            <div className="p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900 hover:border-zinc-700 transition-all">
-              <div className="flex items-center gap-2 text-zinc-200 text-xs font-medium mb-1">
-                <Compass className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Project Files</span>
-              </div>
-              <p className="text-[11px] text-zinc-500 leading-normal">
-                Read, create, and iterate on project files
-              </p>
-            </div>
-
-            <div className="p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900 hover:border-zinc-700 transition-all">
-              <div className="flex items-center gap-2 text-zinc-200 text-xs font-medium mb-1">
-                <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
-                <span>/grill-me</span>
-              </div>
-              <p className="text-[11px] text-zinc-500 leading-normal">
-                Structured interactive questionnaires
-              </p>
-            </div>
+            {SUGGESTION_CARDS.map((card) => (
+              <button
+                key={card.label}
+                type="button"
+                onClick={() => onSuggestionClick?.(card.text)}
+                className="p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-800/60 hover:border-zinc-600 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-2 text-zinc-200 text-xs font-medium mb-1">
+                  <card.icon className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-300 transition-colors" />
+                  <span>{card.label}</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 leading-normal group-hover:text-zinc-400 transition-colors">
+                  {card.description}
+                </p>
+              </button>
+            ))}
           </div>
+
+          <p className="text-[10px] text-zinc-600 tracking-wide">
+            Press <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-[9px]">Ctrl+N</kbd> for new chat
+            {' • '}
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-[9px]">Ctrl+B</kbd> to toggle sidebar
+            {' • '}
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-[9px]">Ctrl+,</kbd> for settings
+          </p>
         </div>
       </div>
     )
@@ -133,15 +147,25 @@ export const MessageList: React.FC<MessageListProps> = ({
       >
         <div className="max-w-3xl mx-auto w-full space-y-6">
           {messages.map((msg, idx) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              onOpenCanvas={onOpenCanvas}
-              onSubmitAnswers={onSubmitAnswers}
-              onApproveTool={onApproveTool}
-              onRollbackRequest={handleRollbackRequest}
-            />
+            <div key={msg.id} className="group relative">
+              <MessageBubble
+                message={msg}
+                onOpenCanvas={onOpenCanvas}
+                onSubmitAnswers={onSubmitAnswers}
+                onApproveTool={onApproveTool}
+                onRollbackRequest={handleRollbackRequest}
+              />
+              {msg.createdAt && (
+                <div className={cn(
+                  'text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity duration-150 mt-0.5',
+                  msg.role === 'user' ? 'text-right pr-1' : 'pl-1'
+                )}>
+                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )}
+            </div>
           ))}
+
 
           {isGenerating && messages[messages.length - 1]?.role === 'user' && (
             <div className="flex items-center gap-2 text-xs text-zinc-400 pl-1 animate-pulse">

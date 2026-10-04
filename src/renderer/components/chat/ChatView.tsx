@@ -1,15 +1,21 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { MessageList } from './MessageList'
 import { ChatInput, type AttachedFile } from './ChatInput'
 import { DockedPromptBar } from './DockedPromptBar'
 import { CanvasPanel } from '../canvas/CanvasPanel'
+import { SessionTodoHUD } from './SessionTodoHUD'
+import { SessionReviewModal } from './SessionReviewModal'
+import { WorkspaceFileTree } from '../sidebar/WorkspaceFileTree'
+import { KeyboardShortcutsModal } from '../ui/KeyboardShortcutsModal'
 import type {
   Message,
   CanvasDocument,
-  ProviderConfig
+  ProviderConfig,
+  SessionTodoItem,
+  FileTreeNode
 } from '../../../shared/types'
 import type { QuestionnairePayload } from '../../../shared/schemas'
-import { PanelLeftOpen, Pencil } from 'lucide-react'
+import { PanelLeftOpen, Pencil, FolderTree, GitCompare, Keyboard, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 interface ChatViewProps {
@@ -52,6 +58,11 @@ interface ChatViewProps {
   isSidebarOpen: boolean
   onToggleSidebar: () => void
   tokenUsage?: { inputTokens: number; totalTokens: number } | null
+  onSuggestionClick?: (text: string) => void
+  sessionTodos?: SessionTodoItem[]
+  onUpdateTodoStatus?: (id: string, status: SessionTodoItem['status']) => void
+  executionMode?: 'build' | 'plan' | 'ask'
+  onChangeExecutionMode?: (mode: 'build' | 'plan' | 'ask') => void
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -86,17 +97,90 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onPromptDraftConsumed,
   isSidebarOpen,
   onToggleSidebar,
-  tokenUsage
+  tokenUsage,
+  onSuggestionClick,
+  sessionTodos = [],
+  onUpdateTodoStatus,
+  executionMode = 'build',
+  onChangeExecutionMode
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
   const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false)
+  const [isFileTreeOpen, setIsFileTreeOpen] = useState(false)
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false)
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false)
+  const [workspaceFiles, setWorkspaceFiles] = useState<FileTreeNode[]>([])
+
   const [chatSplitPercent, setChatSplitPercent] = useState<number>(() => {
     const saved = localStorage.getItem('chat_canvas_split_percent')
     return saved ? Math.max(25, Math.min(75, parseFloat(saved))) : 48
   })
   const isSplitResizingRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Load workspace file tree for context mentions
+  useEffect(() => {
+    let isMounted = true
+    if (folderPath && window.api?.projects?.getDirectoryTree) {
+      window.api.projects.getDirectoryTree(folderPath).then(tree => {
+        if (isMounted && tree) {
+          setWorkspaceFiles(tree)
+        }
+      }).catch(err => console.error('Failed to load directory tree:', err))
+    } else {
+      setWorkspaceFiles([])
+    }
+    return () => { isMounted = false }
+  }, [folderPath])
+
+  // Global hotkeys for file tree, review diffs, shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        if (folderPath) {
+          e.preventDefault()
+          setIsFileTreeOpen(prev => !prev)
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        if (folderPath) {
+          e.preventDefault()
+          setIsReviewModalOpen(prev => !prev)
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault()
+        setIsShortcutsModalOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [folderPath])
+
+  const handleOpenFileInCanvas = async (filePath: string, fileName: string) => {
+    if (!window.api?.projects?.readFile) return
+    try {
+      const fileContent = await window.api.projects.readFile(filePath)
+      if (typeof fileContent === 'string') {
+        const ext = fileName.split('.').pop() || 'txt'
+        const newCanvas: CanvasDocument = {
+          id: `canvas_${Date.now()}`,
+          projectSessionId: targetId || undefined,
+          title: fileName,
+          content: fileContent,
+          language: ext,
+          version: 1,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+        if (onSaveCanvas) {
+          onSaveCanvas(newCanvas)
+        }
+        onOpenCanvas(newCanvas)
+      }
+    } catch (err) {
+      console.error('Failed to open file in canvas:', err)
+    }
+  }
 
   const startSplitResizing = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -147,25 +231,51 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 flex h-screen overflow-hidden bg-zinc-950 relative">
+    <div ref={containerRef} className="flex-1 flex h-screen overflow-hidden bg-background relative">
+      {/* Collapsible Workspace File Tree Drawer */}
+      {folderPath && isFileTreeOpen && (
+        <div className="w-64 h-full border-r border-border shrink-0 bg-card/90 backdrop-blur-xs flex flex-col z-10 transition-all select-none">
+          <div className="h-11 px-3 flex items-center justify-between border-b border-border/60 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <FolderTree className="w-3.5 h-3.5 text-primary" />
+              <span className="text-[11px] uppercase tracking-wider font-semibold">Workspace</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsFileTreeOpen(false)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+              title="Close File Explorer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <WorkspaceFileTree
+              folderPath={folderPath}
+              onOpenFileInCanvas={handleOpenFileInCanvas}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Left / Main Chat Column */}
       {(!isCanvasFullscreen || !activeCanvas) && (
         <div
           style={activeCanvas && !isCanvasFullscreen ? { width: `${chatSplitPercent}%` } : undefined}
           className={cn(
             'flex flex-col h-full overflow-hidden min-w-0 transition-all duration-200',
-            activeCanvas ? 'border-r border-zinc-900/80' : 'flex-1'
+            activeCanvas ? 'border-r border-border/80' : 'flex-1'
           )}
         >
           {/* Clean Thread Header */}
-          <header className="h-11 px-4 flex items-center justify-between shrink-0 bg-zinc-950">
+          <header className="h-11 px-4 flex items-center justify-between shrink-0 bg-background border-b border-border/40">
             <div className="flex items-center gap-2.5 truncate min-w-0">
               {!activeCanvas && (
                 <button
                   type="button"
                   onClick={onToggleSidebar}
                   className={cn(
-                    'side-toggle-btn flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 active:scale-90 cursor-pointer shrink-0',
+                    'side-toggle-btn flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 cursor-pointer shrink-0 transition-all',
                     isSidebarOpen
                       ? 'w-0 h-7 p-0 opacity-0 scale-75 pointer-events-none -mr-2.5 overflow-hidden'
                       : 'w-7 h-7 p-1 opacity-100 scale-100 mr-0'
@@ -189,7 +299,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     if (e.key === 'Enter') handleSaveRename()
                     if (e.key === 'Escape') setIsEditingTitle(false)
                   }}
-                  className="bg-zinc-900 border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-100 outline-none max-w-xs"
+                  className="bg-muted border border-border rounded px-2 py-0.5 text-xs text-foreground outline-none max-w-xs"
                 />
               ) : (
                 <div
@@ -197,20 +307,70 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   className="group flex items-center gap-1.5 truncate cursor-pointer"
                   title={targetId ? 'Click to rename' : undefined}
                 >
-                  <span className="font-semibold text-xs text-zinc-200 truncate">{title}</span>
+                  <span className="font-semibold text-xs text-foreground truncate">{title}</span>
                   {targetId && onRenameCurrent && (
-                    <Pencil className="w-3 h-3 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
                 </div>
               )}
 
               {folderPath && (
-                <span className="text-[11px] text-zinc-500 font-mono truncate max-w-xs">
+                <span className="text-[11px] text-muted-foreground font-mono truncate max-w-xs hidden sm:inline">
                   · {folderPath}
                 </span>
               )}
             </div>
+
+            {/* Header Right Actions */}
+            <div className="flex items-center gap-1 shrink-0">
+              {folderPath && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsFileTreeOpen(prev => !prev)}
+                    className={cn(
+                      'flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs transition-colors cursor-pointer',
+                      isFileTreeOpen
+                        ? 'bg-primary/15 text-primary font-medium'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/70'
+                    )}
+                    title="Toggle Workspace Files Explorer (Ctrl+Shift+F)"
+                  >
+                    <FolderTree className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Files</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsReviewModalOpen(true)}
+                    className="flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors cursor-pointer"
+                    title="Review Session Diffs (Ctrl+Shift+D)"
+                  >
+                    <GitCompare className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="hidden sm:inline">Diff</span>
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsShortcutsModalOpen(true)}
+                className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors cursor-pointer"
+                title="Keyboard Shortcuts (Ctrl+/)"
+              >
+                <Keyboard className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </header>
+
+          {/* Session Task Checklist HUD */}
+          {sessionTodos && sessionTodos.length > 0 && (
+            <SessionTodoHUD
+              todos={sessionTodos}
+              onUpdateStatus={onUpdateTodoStatus}
+              isGenerating={isGenerating}
+            />
+          )}
 
           {/* Messages stream */}
           <div className="flex-1 overflow-hidden flex flex-col relative">
@@ -222,6 +382,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               onApproveTool={onApproveTool}
               onRollback={onRollback}
               isPromptActive={Boolean(activeQuestionnaire || activeApproval)}
+              onSuggestionClick={onSuggestionClick}
             />
           </div>
 
@@ -239,9 +400,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
             promptDraft={promptDraft}
             onPromptDraftConsumed={onPromptDraftConsumed}
             tokenUsage={tokenUsage}
+            executionMode={executionMode}
+            onChangeExecutionMode={onChangeExecutionMode}
+            workspaceFiles={workspaceFiles}
+            onOpenDiffReview={folderPath ? () => setIsReviewModalOpen(true) : undefined}
             placeholder={
               mode === 'project'
-                ? 'Ask about this project, request code, or canvas notes...'
+                ? 'Ask about this project, request code, or canvas notes... (use @ for files)'
                 : 'Ask questions, brainstorm, or type /canvas or /grill-me...'
             }
             promptBar={
@@ -261,10 +426,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {activeCanvas && !isCanvasFullscreen && (
         <div
           onMouseDown={startSplitResizing}
-          className="w-2 h-full cursor-col-resize shrink-0 bg-transparent hover:bg-blue-500/30 active:bg-blue-500/60 z-20 transition-colors flex items-center justify-center -mx-1 group select-none"
+          className="w-2 h-full cursor-col-resize shrink-0 bg-transparent hover:bg-primary/30 active:bg-primary/60 z-20 transition-colors flex items-center justify-center -mx-1 group select-none"
           title="Drag to resize panels"
         >
-          <div className="w-[2px] h-8 rounded-full bg-transparent group-hover:bg-blue-400 group-active:bg-blue-400 transition-colors" />
+          <div className="w-[2px] h-8 rounded-full bg-transparent group-hover:bg-primary group-active:bg-primary transition-colors" />
         </div>
       )}
 
@@ -283,6 +448,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
           />
         </div>
       )}
+
+      {/* Session Changes / Diff Review Modal */}
+      {folderPath && (
+        <SessionReviewModal
+          folderPath={folderPath}
+          isOpen={isReviewModalOpen}
+          onClose={() => setIsReviewModalOpen(false)}
+        />
+      )}
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
     </div>
   )
 }
